@@ -106,6 +106,7 @@ jobs:
           OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
           IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
           LATEST_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
+          LOCAL_TAG="local/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
           
           echo "📦 Building overlay as OCI image: ${IMAGE_TAG}"
           
@@ -115,19 +116,21 @@ jobs:
           COPY ${OVERLAY_DIR} /overlay/
           EOF
           
-          # Build overlay image locally first (so it's available in Docker daemon)
+          # Build overlay image locally with local tag (for imager to use without pulling)
           docker build \
             --file /tmp/overlay.Dockerfile \
-            --tag "${IMAGE_TAG}" \
-            --tag "${LATEST_TAG}" \
+            --tag "${LOCAL_TAG}" \
             .
           
-          # Push to registry
+          # Tag for registry and push
+          docker tag "${LOCAL_TAG}" "${IMAGE_TAG}"
+          docker tag "${LOCAL_TAG}" "${LATEST_TAG}"
           docker push "${IMAGE_TAG}"
           docker push "${LATEST_TAG}"
           
           echo "✅ Overlay image built, loaded locally, and pushed: ${IMAGE_TAG}"
-          echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "overlay_image=${LOCAL_TAG}" >> $GITHUB_OUTPUT
+          echo "overlay_image_registry=${IMAGE_TAG}" >> $GITHUB_OUTPUT
       
       - name: Build overlay as OCI image (ACT fallback)
         if: ${{ env.ACT }}
