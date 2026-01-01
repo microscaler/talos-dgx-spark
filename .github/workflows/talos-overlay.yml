@@ -104,9 +104,7 @@ jobs:
         id: build_overlay_image
         run: |
           OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
-          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
-          LATEST_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
-          LOCAL_TAG="local/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
+          IMAGE_TAG="talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
           
           echo "📦 Building overlay as OCI image: ${IMAGE_TAG}"
           
@@ -116,27 +114,20 @@ jobs:
           COPY ${OVERLAY_DIR} /overlay/
           EOF
           
-          # Build overlay image locally with local tag (for imager to use without pulling)
+          # Build overlay image locally (no registry prefix, no push)
           docker build \
             --file /tmp/overlay.Dockerfile \
-            --tag "${LOCAL_TAG}" \
+            --tag "${IMAGE_TAG}" \
             .
           
-          # Tag for registry and push
-          docker tag "${LOCAL_TAG}" "${IMAGE_TAG}"
-          docker tag "${LOCAL_TAG}" "${LATEST_TAG}"
-          docker push "${IMAGE_TAG}"
-          docker push "${LATEST_TAG}"
-          
-          echo "✅ Overlay image built, loaded locally, and pushed: ${IMAGE_TAG}"
-          echo "overlay_image=${LOCAL_TAG}" >> $GITHUB_OUTPUT
-          echo "overlay_image_registry=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "✅ Overlay image built locally: ${IMAGE_TAG}"
+          echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
       
       - name: Build overlay as OCI image (ACT fallback)
         if: ${{ env.ACT }}
         run: |
           OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
-          IMAGE_TAG="local/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
+          IMAGE_TAG="talos-overlay-${{ env.OVERLAY_NAME }}:1.0.0"
           
           echo "📦 Building overlay as OCI image (local): ${IMAGE_TAG}"
           
@@ -158,7 +149,7 @@ jobs:
       - name: Verify overlay image exists locally
         if: ${{ !env.ACT }}
         run: |
-          OVERLAY_IMAGE="${{ steps.build_overlay_image.outputs.overlay_image || 'local/talos-overlay-asus-ascent-gx10:1.0.0' }}"
+          OVERLAY_IMAGE="${{ steps.build_overlay_image.outputs.overlay_image || 'talos-overlay-asus-ascent-gx10:1.0.0' }}"
           echo "🔍 Verifying overlay image exists: ${OVERLAY_IMAGE}"
           if ! docker image inspect "${OVERLAY_IMAGE}" >/dev/null 2>&1; then
             echo "❌ Overlay image not found locally: ${OVERLAY_IMAGE}"
@@ -176,7 +167,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           PLATFORM: ${{ matrix.platform }}
           TALOS_VERSION: ${{ env.TALOS_VERSION }}
-          OVERLAY_IMAGE: ${{ steps.build_overlay_image.outputs.overlay_image || 'local/talos-overlay-asus-ascent-gx10:1.0.0' }}
+          OVERLAY_IMAGE: ${{ steps.build_overlay_image.outputs.overlay_image || 'talos-overlay-asus-ascent-gx10:1.0.0' }}
           OVERLAY_NAME: asus-ascent-gx10-overlay
         run: python3 talos/scripts/ci_build_talos_image.py
       
@@ -186,7 +177,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           PLATFORM: ${{ matrix.platform }}
           TALOS_VERSION: ${{ env.TALOS_VERSION }}
-          OVERLAY_IMAGE: local/talos-overlay-asus-ascent-gx10:latest
+          OVERLAY_IMAGE: talos-overlay-asus-ascent-gx10:1.0.0
           OVERLAY_NAME: asus-ascent-gx10-overlay
         run: python3 talos/scripts/ci_build_talos_image.py
     
