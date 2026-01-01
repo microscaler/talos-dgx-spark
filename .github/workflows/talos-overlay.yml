@@ -107,6 +107,7 @@ jobs:
           
           docker build \
             --platform linux/arm64 \
+            --build-arg TARGETPLATFORM=linux/arm64 \
             --file Dockerfile \
             --tag "${DOCKERHUB_TAG}" \
             --tag "${DOCKERHUB_LATEST}" \
@@ -114,16 +115,31 @@ jobs:
           
           # Verify the installer is in the built image
           echo "🔍 Verifying installer is in the built image..."
-          docker create --name overlay-check "${DOCKERHUB_TAG}" 2>/dev/null || true
-          docker cp overlay-check:/overlay/installers/asus-ascent-gx10-overlay /tmp/installer-check 2>/dev/null && {
+          INSTALLER_FOUND=false
+          docker create --name overlay-check "${DOCKERHUB_TAG}" 2>/dev/null || {
+            echo "⚠️  Could not create container from scratch image (expected)"
+          }
+          
+          if docker cp overlay-check:/overlay/installers/asus-ascent-gx10-overlay /tmp/installer-check 2>/dev/null; then
             echo "✅ Installer found in image!"
             ls -lh /tmp/installer-check
             file /tmp/installer-check
             rm -f /tmp/installer-check
-          } || echo "❌ Installer NOT found in image at /overlay/installers/asus-ascent-gx10-overlay"
+            INSTALLER_FOUND=true
+          else
+            echo "❌ Installer NOT found in image at /overlay/installers/asus-ascent-gx10-overlay"
+            echo "   Checking what's actually in the image..."
+            # Try to inspect the image layers
+            docker inspect "${DOCKERHUB_TAG}" | grep -A 10 "Layers" || echo "   Could not inspect image layers"
+          fi
           docker rm -f overlay-check 2>/dev/null || true
           
-          echo "✅ Overlay image built locally: ${DOCKERHUB_TAG}"
+          if [ "${INSTALLER_FOUND}" != "true" ]; then
+            echo "❌ Build verification failed: Installer binary not found in image"
+            exit 1
+          fi
+          
+          echo "✅ Overlay image built and verified: ${DOCKERHUB_TAG}"
           echo "overlay_image=${DOCKERHUB_TAG}" >> $GITHUB_OUTPUT
       
       - name: Log in to Docker Hub
