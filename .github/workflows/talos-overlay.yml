@@ -114,28 +114,41 @@ jobs:
             .
           
           # Verify the installer is in the built image
+          # Since scratch images can't run containers, we use docker save to inspect contents
           echo "🔍 Verifying installer is in the built image..."
           INSTALLER_FOUND=false
-          docker create --name overlay-check "${DOCKERHUB_TAG}" 2>/dev/null || {
-            echo "⚠️  Could not create container from scratch image (expected)"
+          
+          # Save image to tar and inspect contents
+          TEMP_TAR="/tmp/overlay-verify-$$.tar"
+          docker save "${DOCKERHUB_TAG}" -o "${TEMP_TAR}" 2>/dev/null || {
+            echo "❌ Failed to save image for verification"
+            exit 1
           }
           
-          if docker cp overlay-check:/overlay/installers/asus-ascent-gx10-overlay /tmp/installer-check 2>/dev/null; then
-            echo "✅ Installer found in image!"
-            ls -lh /tmp/installer-check
-            file /tmp/installer-check
-            rm -f /tmp/installer-check
-            INSTALLER_FOUND=true
+          # Extract and check for installer in the image layers
+          if tar -tf "${TEMP_TAR}" 2>/dev/null | grep -q "overlay/installers/asus-ascent-gx10-overlay"; then
+            echo "✅ Installer found in image layers!"
+            # Try to extract it to verify it's actually there
+            tar -xf "${TEMP_TAR}" -O 2>/dev/null | tar -xf - -O 2>/dev/null | grep -a "overlay/installers/asus-ascent-gx10-overlay" >/dev/null 2>&1 && {
+              echo "✅ Installer binary verified in image"
+              INSTALLER_FOUND=true
+            } || {
+              echo "⚠️  Installer path found in manifest but could not extract"
+              # List what's actually in the image
+              echo "   Image contents:"
+              tar -tf "${TEMP_TAR}" 2>/dev/null | grep -E "(overlay|installers)" | head -20
+            }
           else
             echo "❌ Installer NOT found in image at /overlay/installers/asus-ascent-gx10-overlay"
-            echo "   Checking what's actually in the image..."
-            # Try to inspect the image layers
-            docker inspect "${DOCKERHUB_TAG}" | grep -A 10 "Layers" || echo "   Could not inspect image layers"
+            echo "   Checking image contents:"
+            tar -tf "${TEMP_TAR}" 2>/dev/null | grep -E "overlay" | head -20 || echo "   No overlay directory found"
           fi
-          docker rm -f overlay-check 2>/dev/null || true
+          
+          rm -f "${TEMP_TAR}"
           
           if [ "${INSTALLER_FOUND}" != "true" ]; then
             echo "❌ Build verification failed: Installer binary not found in image"
+            echo "   This indicates the COPY step may have failed silently"
             exit 1
           fi
           
