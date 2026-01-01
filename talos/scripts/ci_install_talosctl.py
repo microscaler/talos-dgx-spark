@@ -8,6 +8,7 @@ This script downloads and installs the talosctl binary from GitHub releases.
 import os
 import sys
 import subprocess
+import tempfile
 import urllib.request
 import urllib.error
 from pathlib import Path
