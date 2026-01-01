@@ -101,26 +101,6 @@ func install() error {
 
 	fmt.Printf("✅ Overlay installation completed successfully\n")
 	return nil
-
-	// Install kernel modules
-	if err := installKernelModules(overlayPath, rootfsPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to install kernel modules: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Install firmware
-	if err := installFirmware(overlayPath, rootfsPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to install firmware: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Install configuration files
-	if err := installConfigFiles(overlayPath, rootfsPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to install config files: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("✅ Overlay installation completed successfully\n")
 }
 
 // installKernelModules installs NVIDIA kernel modules
