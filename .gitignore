@@ -56,10 +56,11 @@ talos/asus-ascent-gx10-overlay/installer/vendor/
 # Extracted packages (source .deb files, not needed in repo)
 extracted/
 
-# Output directory (build artifacts - keep .tar.gz via LFS, ignore others)
+# Output directory (build artifacts - deployed via GitHub Actions artifacts, not in repo)
 talos/output/*
 !talos/output/.gitkeep
-!talos/output/*.tar.gz
+# Note: *.tar.gz overlay packages are built artifacts, not tracked in repo
+# They are deployed via GitHub Actions artifacts instead
 
 # Python cache in scripts
 talos/scripts/__pycache__/
