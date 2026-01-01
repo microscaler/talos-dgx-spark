@@ -71,7 +71,7 @@ jobs:
         if: ${{ !env.ACT }}
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.22'
     
       - name: Extract overlay version
         id: version
@@ -102,23 +102,28 @@ jobs:
           cd "${INSTALLER_DIR}"
           if [ -f "go.mod" ]; then
             # Download dependencies
-            go mod download github.com/siderolabs/talos || {
-              echo "⚠️  Warning: Failed to download Talos dependencies"
+            echo "📥 Downloading Talos dependencies..."
+            go mod download || {
+              echo "❌ Failed to download Talos dependencies"
+              exit 1
             }
             
+            # Verify Go version
+            GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+            echo "🔍 Go version: ${GO_VERSION}"
+            
             # Build installer binary
+            echo "🔨 Building installer binary for linux/arm64..."
             GOOS=linux GOARCH=arm64 go build -o "${INSTALLER_BINARY}" ./installer.go || {
-              echo "⚠️  Warning: Failed to build installer (this is OK if Talos SDK not available)"
-              # Create a dummy installer if build fails (for testing)
-              echo '#!/bin/sh' > "${INSTALLER_BINARY}"
-              echo 'echo "Dummy installer - overlay installer not built"' >> "${INSTALLER_BINARY}"
-              chmod +x "${INSTALLER_BINARY}"
+              echo "❌ Failed to build installer binary"
+              echo "   Go version: $(go version)"
+              echo "   Talos requires Go >= 1.22.7"
+              exit 1
             }
+            echo "✅ Installer binary built successfully"
           else
-            echo "⚠️  Warning: go.mod not found, creating dummy installer"
-            echo '#!/bin/sh' > "${INSTALLER_BINARY}"
-            echo 'echo "Dummy installer - go.mod not found"' >> "${INSTALLER_BINARY}"
-            chmod +x "${INSTALLER_BINARY}"
+            echo "❌ go.mod not found in ${INSTALLER_DIR}"
+            exit 1
           fi
           
           echo "✅ Installer binary ready: ${INSTALLER_BINARY}"
