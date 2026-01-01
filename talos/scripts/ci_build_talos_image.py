@@ -68,7 +68,10 @@ def find_overlay_dir(talos_dir: Path) -> Optional[Path]:
 
 def verify_talosctl(talosctl_path: Path) -> bool:
     """
-    Verify talosctl is working.
+    Verify talosctl is working by checking if it can run the command we need.
+    
+    Note: `talosctl version` tries to connect to a cluster, so we check
+    `talosctl image factory --help` instead, which is what we actually use.
     
     Args:
         talosctl_path: Path to talosctl
@@ -77,23 +80,30 @@ def verify_talosctl(talosctl_path: Path) -> bool:
         bool: True if talosctl works
     """
     try:
+        # Check if the command we actually need works
         result = subprocess.run(
-            [str(talosctl_path), "version"],
+            [str(talosctl_path), "image", "factory", "--help"],
             capture_output=True,
             text=True,
             timeout=10
         )
         if result.returncode != 0:
-            print(f"❌ talosctl version command failed:", file=sys.stderr)
+            print(f"❌ talosctl image factory command failed:", file=sys.stderr)
             print(f"   Exit code: {result.returncode}", file=sys.stderr)
             if result.stderr:
                 print(f"   Error: {result.stderr}", file=sys.stderr)
             if result.stdout:
                 print(f"   Output: {result.stdout}", file=sys.stderr)
             return False
+        
+        # Also verify the binary can execute (check for help text)
+        if "factory" not in result.stdout.lower() and "usage" not in result.stdout.lower():
+            print("⚠️  talosctl image factory help output unexpected", file=sys.stderr)
+            # Don't fail, just warn - the command might still work
+        
         return True
     except subprocess.TimeoutExpired:
-        print("❌ talosctl version command timed out", file=sys.stderr)
+        print("❌ talosctl command timed out", file=sys.stderr)
         return False
     except FileNotFoundError:
         print(f"❌ talosctl binary not found at: {talosctl_path}", file=sys.stderr)
