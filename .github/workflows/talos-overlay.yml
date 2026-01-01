@@ -162,7 +162,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           PLATFORM: ${{ matrix.platform }}
           TALOS_VERSION: ${{ env.TALOS_VERSION }}
-          OVERLAY_IMAGE: ${{ steps.build_overlay_image.outputs.overlay_image || steps.overlay_meta.outputs.tags || 'ghcr.io/microscaler/talos-overlay-asus-ascent-gx10:latest' }}
+          OVERLAY_IMAGE: ${{ steps.build_overlay_image.outputs.overlay_image || 'local/talos-overlay-asus-ascent-gx10:1.0.0' }}
           OVERLAY_NAME: asus-ascent-gx10-overlay
         run: python3 talos/scripts/ci_build_talos_image.py
       
