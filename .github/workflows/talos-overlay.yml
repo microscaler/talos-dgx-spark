@@ -106,7 +106,7 @@ jobs:
         with:
           name: talos-overlay-package-${{ steps.version.outputs.version }}
           path: talos/output/*.tar.gz
-          retention-days: 400  # Maximum retention for artifacts (releases keep forever)
+          retention-days: 1  # Short retention - releases keep forever
           if-no-files-found: error
           compression-level: 6
       
@@ -232,7 +232,7 @@ jobs:
         with:
           name: talos-image-${{ matrix.platform }}-${{ matrix.arch }}
           path: talos/output/talos-*.img
-          retention-days: 30
+          retention-days: 1  # Short retention - releases keep forever
           compression-level: 0  # Images are already compressed
     
       - name: Log in to GitHub Container Registry
@@ -247,13 +247,15 @@ jobs:
         id: overlay_version
         run: python3 talos/scripts/ci_extract_version_from_package.py
     
-      - name: Upload image to GitHub Releases (if on main)
+      - name: Upload image to GitHub Release (permanent storage)
         if: ${{ !env.ACT && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
         uses: softprops/action-gh-release@v2
         with:
           files: talos/output/talos-*.img
-          tag_name: talos-overlay-${{ steps.overlay_version.outputs.version }}
-          name: Talos Overlay ${{ steps.overlay_version.outputs.version }}
+          tag_name: talos-image-${{ steps.overlay_version.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+          name: Talos Image ${{ steps.overlay_version.outputs.version }} (${{ matrix.platform }}/${{ matrix.arch }})
+          draft: false
+          prerelease: false
           body: |
             Talos Linux image with ASUS Ascent GX10 overlay
             
@@ -268,9 +270,11 @@ jobs:
             
             ## Components Included
             
-            - NVIDIA GPU kernel modules
-            - NVIDIA GPU firmware
+            - NVIDIA GPU kernel modules (6.11.0-1016-nvidia)
+            - NVIDIA GPU firmware blobs
             - Hardware-specific configurations
+            
+            **Note:** This release asset is stored permanently by GitHub.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
