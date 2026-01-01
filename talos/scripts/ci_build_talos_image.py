@@ -242,11 +242,15 @@ def build_image(
         
         # The imager outputs files with a specific naming pattern
         # Look for the generated image file
-        # Talos imager typically outputs: talos-{platform}-{arch}.img or similar
+        # Talos imager typically outputs: {platform}-{arch}.raw.zst (compressed) or .raw/.img
+        # Check for compressed .zst files first, then decompress if needed
         possible_names = [
             output_path.name,
+            f"talos-{platform}-{arch}-asus-ascent.img",
             f"talos-{platform}-{arch}.img",
             f"talos-{arch}-{platform}.img",
+            f"{platform}-{arch}.raw",
+            f"{platform}-{arch}.raw.zst",
             f"disk.raw",
         ]
         
@@ -257,11 +261,22 @@ def build_image(
                 found_image = candidate
                 break
         
-        # If not found by name, look for any .img file
+        # If not found by name, look for any .img, .raw, or .zst files
         if not found_image:
-            img_files = list(output_dir.glob("*.img"))
-            if img_files:
-                found_image = img_files[0]
+            # Check for compressed files first
+            zst_files = list(output_dir.glob("*.zst"))
+            if zst_files:
+                found_image = zst_files[0]
+            else:
+                # Check for raw files
+                raw_files = list(output_dir.glob("*.raw"))
+                if raw_files:
+                    found_image = raw_files[0]
+                else:
+                    # Check for img files
+                    img_files = list(output_dir.glob("*.img"))
+                    if img_files:
+                        found_image = img_files[0]
         
         if not found_image:
             print(f"❌ Output image not found in {output_dir}", file=sys.stderr)
@@ -270,6 +285,43 @@ def build_image(
             for f in output_dir.iterdir():
                 print(f"     - {f.name}", file=sys.stderr)
             return 1
+        
+        # If we found a .zst file, decompress it
+        if found_image.suffix == ".zst":
+            print(f"📦 Found compressed image: {found_image.name}")
+            print(f"   Decompressing to .raw format...")
+            
+            # Decompress using zstd
+            raw_path = found_image.with_suffix("")  # Remove .zst extension
+            try:
+                result = subprocess.run(
+                    ["zstd", "-d", "-f", "-o", str(raw_path), str(found_image)],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # 5 minute timeout for decompression
+                )
+                if result.returncode != 0:
+                    print(f"❌ Failed to decompress image: {result.stderr}", file=sys.stderr)
+                    return 1
+                print(f"✅ Decompressed to: {raw_path.name}")
+                found_image = raw_path
+            except FileNotFoundError:
+                # Try using Python zstandard if zstd command not available
+                if HAS_ZSTANDARD:
+                    try:
+                        with open(found_image, "rb") as compressed:
+                            with open(raw_path, "wb") as decompressed:
+                                dctx = zstd.ZstdDecompressor()
+                                dctx.copy_stream(compressed, decompressed)
+                        print(f"✅ Decompressed to: {raw_path.name} (using Python zstandard)")
+                        found_image = raw_path
+                    except Exception as e:
+                        print(f"❌ Failed to decompress with Python zstandard: {e}", file=sys.stderr)
+                        return 1
+                else:
+                    print(f"❌ zstd command not found and zstandard module not available", file=sys.stderr)
+                    print(f"   Please install zstd or python-zstandard", file=sys.stderr)
+                    return 1
         
         # If the found image is different from expected, rename it
         if found_image != output_path:
