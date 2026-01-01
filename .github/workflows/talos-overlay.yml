@@ -115,16 +115,18 @@ jobs:
           COPY ${OVERLAY_DIR} /overlay/
           EOF
           
-          # Build and push overlay image
-          docker buildx build \
-            --platform linux/arm64 \
+          # Build overlay image locally first (so it's available in Docker daemon)
+          docker build \
             --file /tmp/overlay.Dockerfile \
             --tag "${IMAGE_TAG}" \
             --tag "${LATEST_TAG}" \
-            --push \
             .
           
-          echo "✅ Overlay image built and pushed: ${IMAGE_TAG}"
+          # Push to registry
+          docker push "${IMAGE_TAG}"
+          docker push "${LATEST_TAG}"
+          
+          echo "✅ Overlay image built, loaded locally, and pushed: ${IMAGE_TAG}"
           echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
       
       - name: Build overlay as OCI image (ACT fallback)
