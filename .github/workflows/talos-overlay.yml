@@ -106,8 +106,8 @@ jobs:
             echo "🔍 Go version: ${GO_VERSION}"
             
             # Download dependencies and generate go.sum
-            echo "📥 Downloading Talos dependencies and generating go.sum..."
-            go mod download || {
+            echo "📥 Downloading Talos dependencies..."
+            go mod download github.com/siderolabs/talos || {
               echo "❌ Failed to download Talos dependencies"
               exit 1
             }
