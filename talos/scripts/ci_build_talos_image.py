@@ -71,6 +71,58 @@ def find_overlay_dir(talos_dir: Path) -> Optional[Path]:
 # The verify_talosctl function is kept for potential future use but not currently called
 
 
+def build_overlay_image(overlay_dir: Path, overlay_name: str) -> str:
+    """
+    Build overlay as OCI image.
+    
+    Args:
+        overlay_dir: Path to overlay directory
+        overlay_name: Name of the overlay
+        
+    Returns:
+        str: Image reference (e.g., "local/asus-ascent-gx10-overlay:latest")
+    """
+    import tempfile
+    import shutil
+    
+    # Create a temporary Dockerfile for the overlay
+    dockerfile_content = f"""FROM scratch
+COPY . /overlay/
+"""
+    
+    # Create temp directory for Docker build context
+    with tempfile.TemporaryDirectory() as temp_dir:
+        dockerfile_path = Path(temp_dir) / "Dockerfile"
+        dockerfile_path.write_text(dockerfile_content)
+        
+        # Copy overlay directory to temp dir
+        temp_overlay = Path(temp_dir) / "overlay"
+        shutil.copytree(overlay_dir, temp_overlay, dirs_exist_ok=True)
+        
+        # Build the overlay image
+        image_ref = f"local/{overlay_name}:latest"
+        print(f"📦 Building overlay as OCI image: {image_ref}")
+        
+        result = subprocess.run(
+            [
+                "docker", "build",
+                "-t", image_ref,
+                "-f", str(dockerfile_path),
+                str(temp_dir)
+            ],
+            capture_output=True,
+            text=True,
+        )
+        
+        if result.returncode != 0:
+            print(f"❌ Failed to build overlay image:", file=sys.stderr)
+            print(result.stderr, file=sys.stderr)
+            raise RuntimeError("Failed to build overlay image")
+        
+        print(f"✅ Overlay image built: {image_ref}")
+        return image_ref
+
+
 def build_image(
     overlay_dir: Path,
     arch: str,
@@ -110,24 +162,31 @@ def build_image(
     output_dir = output_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # Build overlay as OCI image
+    overlay_name = overlay_dir.name
+    try:
+        overlay_image_ref = build_overlay_image(overlay_dir, overlay_name)
+    except Exception as e:
+        print(f"❌ Failed to build overlay image: {e}", file=sys.stderr)
+        return 1
+    
     # Convert paths to absolute for Docker volume mounting
-    overlay_dir_abs = overlay_dir.resolve()
     output_dir_abs = output_dir.resolve()
     
     # Imager image
     imager_image = f"ghcr.io/siderolabs/imager:{talos_version}"
     
     # Build command using Docker imager
-    # The imager expects the overlay to be mounted and output directory to be mounted
+    # The imager expects overlay-image (OCI image) and overlay-name
     cmd = [
         "docker", "run", "--rm", "-t",
-        "-v", f"{overlay_dir_abs}:/overlay:ro",
         "-v", f"{output_dir_abs}:/out",
         imager_image,
+        "installer",
         "--arch", arch,
         "--platform", platform,
-        "--overlay", "/overlay",
-        "installer",
+        "--overlay-image", overlay_image_ref,
+        "--overlay-name", overlay_name,
     ]
     
     print(f"🔨 Building Talos image with overlay...")
@@ -135,7 +194,8 @@ def build_image(
     print(f"   Platform: {platform}")
     print(f"   Talos Version: {talos_version}")
     print(f"   Imager Image: {imager_image}")
-    print(f"   Overlay: {overlay_dir}")
+    print(f"   Overlay Image: {overlay_image_ref}")
+    print(f"   Overlay Name: {overlay_name}")
     print(f"   Output Directory: {output_dir}")
     print()
     
