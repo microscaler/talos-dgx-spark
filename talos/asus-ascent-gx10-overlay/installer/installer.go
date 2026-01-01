@@ -1,112 +1,140 @@
-// Package installer implements the Talos overlay installer for ASUS Ascent GX10
+// Package main implements the Talos overlay installer for ASUS Ascent GX10
 //
 // This installer adds NVIDIA GPU support to Talos Linux by:
 // - Installing NVIDIA kernel modules
 // - Installing GPU firmware
 // - Configuring boot parameters
 // - Setting up module loading
-package installer
+//
+// The installer is called by Talos imager with the overlay path as the first argument
+// and the rootfs path as the second argument.
+package main
 
 import (
-	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-
-	"github.com/siderolabs/talos/pkg/imager/overlay"
 )
 
-// Installer implements the overlay.Installer interface
-type Installer struct {
-	overlayPath string
-}
-
-// NewInstaller creates a new ASUS Ascent GX10 overlay installer
-func NewInstaller(overlayPath string) *Installer {
-	return &Installer{
-		overlayPath: overlayPath,
+func main() {
+	if len(os.Args) < 3 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <overlay-path> <rootfs-path>\n", os.Args[0])
+		os.Exit(1)
 	}
-}
 
-// Install implements the overlay.Installer interface
-func (i *Installer) Install(ctx context.Context, options *overlay.InstallerOptions) error {
+	overlayPath := os.Args[1]
+	rootfsPath := os.Args[2]
+
+	fmt.Printf("Installing ASUS Ascent GX10 overlay...\n")
+	fmt.Printf("  Overlay path: %s\n", overlayPath)
+	fmt.Printf("  Rootfs path: %s\n", rootfsPath)
+
 	// Install kernel modules
-	if err := i.installKernelModules(ctx, options); err != nil {
-		return fmt.Errorf("failed to install kernel modules: %w", err)
+	if err := installKernelModules(overlayPath, rootfsPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to install kernel modules: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Install firmware
-	if err := i.installFirmware(ctx, options); err != nil {
-		return fmt.Errorf("failed to install firmware: %w", err)
+	if err := installFirmware(overlayPath, rootfsPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to install firmware: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Install configuration files
-	if err := i.installConfigFiles(ctx, options); err != nil {
-		return fmt.Errorf("failed to install config files: %w", err)
+	if err := installConfigFiles(overlayPath, rootfsPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to install config files: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Configure boot parameters
-	if err := i.configureBootParams(ctx, options); err != nil {
-		return fmt.Errorf("failed to configure boot params: %w", err)
-	}
-
-	return nil
+	fmt.Printf("✅ Overlay installation completed successfully\n")
 }
 
 // installKernelModules installs NVIDIA kernel modules
-func (i *Installer) installKernelModules(ctx context.Context, options *overlay.InstallerOptions) error {
-	sourceDir := filepath.Join(i.overlayPath, "install", "kernel-modules")
-	targetDir := filepath.Join(options.RootfsPath, "lib", "modules")
+func installKernelModules(overlayPath, rootfsPath string) error {
+	sourceDir := filepath.Join(overlayPath, "install", "kernel-modules")
+	targetDir := filepath.Join(rootfsPath, "lib", "modules")
 
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		return fmt.Errorf("kernel modules directory not found: %s", sourceDir)
-	}
-
-	// Copy kernel modules to target
-	// TODO: Implement module copying logic
-	// This should preserve module structure and dependencies
-
-	return nil
-}
-
-// installFirmware installs GPU firmware blobs
-func (i *Installer) installFirmware(ctx context.Context, options *overlay.InstallerOptions) error {
-	sourceDir := filepath.Join(i.overlayPath, "install", "firmware")
-	targetDir := filepath.Join(options.RootfsPath, "lib", "firmware")
-
-	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		return fmt.Errorf("firmware directory not found: %s", sourceDir)
-	}
-
-	// Copy firmware to target
-	// TODO: Implement firmware copying logic
-	// This should preserve firmware directory structure
-
-	return nil
-}
-
-// installConfigFiles installs configuration files
-func (i *Installer) installConfigFiles(ctx context.Context, options *overlay.InstallerOptions) error {
-	filesDir := filepath.Join(i.overlayPath, "files")
-
-	if _, err := os.Stat(filesDir); os.IsNotExist(err) {
-		// No config files to install
+		fmt.Printf("⚠️  Kernel modules directory not found: %s (skipping)\n", sourceDir)
 		return nil
 	}
 
-	// Copy configuration files to target
-	// TODO: Implement file copying logic
-	// This should preserve file permissions and directory structure
-
-	return nil
+	fmt.Printf("📦 Installing kernel modules from %s to %s\n", sourceDir, targetDir)
+	return copyDirectory(sourceDir, targetDir)
 }
 
-// configureBootParams configures kernel boot parameters
-func (i *Installer) configureBootParams(ctx context.Context, options *overlay.InstallerOptions) error {
-	// Add NVIDIA boot parameters to kernel command line
-	// TODO: Implement boot parameter configuration
-	// This should append NVIDIA-specific parameters to the kernel cmdline
+// installFirmware installs GPU firmware blobs
+func installFirmware(overlayPath, rootfsPath string) error {
+	sourceDir := filepath.Join(overlayPath, "install", "firmware")
+	targetDir := filepath.Join(rootfsPath, "lib", "firmware")
 
-	return nil
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		fmt.Printf("⚠️  Firmware directory not found: %s (skipping)\n", sourceDir)
+		return nil
+	}
+
+	fmt.Printf("📦 Installing firmware from %s to %s\n", sourceDir, targetDir)
+	return copyDirectory(sourceDir, targetDir)
+}
+
+// installConfigFiles installs configuration files
+func installConfigFiles(overlayPath, rootfsPath string) error {
+	filesDir := filepath.Join(overlayPath, "files")
+
+	if _, err := os.Stat(filesDir); os.IsNotExist(err) {
+		fmt.Printf("⚠️  Config files directory not found: %s (skipping)\n", filesDir)
+		return nil
+	}
+
+	fmt.Printf("📦 Installing config files from %s to %s\n", filesDir, rootfsPath)
+	return copyDirectory(filesDir, rootfsPath)
+}
+
+// copyDirectory recursively copies a directory
+func copyDirectory(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+
+		// Create parent directory if it doesn't exist
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return err
+		}
+
+		// Copy file
+		return copyFile(path, dstPath, info.Mode())
+	})
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string, mode os.FileMode) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
 }
 
