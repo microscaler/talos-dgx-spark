@@ -23,7 +23,7 @@ on:
       build_image:
         description: 'Build Talos image with overlay'
         required: false
-        default: 'true'
+        default: true
         type: boolean
 
 env:
@@ -194,7 +194,6 @@ jobs:
           path: talos/output/
           github-token: ${{ secrets.GITHUB_TOKEN }}
           merge-multiple: false
-          if-no-files-found: error
     
       - name: Set up Python
         uses: actions/setup-python@v5
