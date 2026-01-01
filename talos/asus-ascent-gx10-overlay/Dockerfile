@@ -22,8 +22,14 @@ FROM scratch
 # Copy all overlay files at ROOT level (not under /overlay/)
 # The imager extracts to tempDir/overlay/, so files at root become tempDir/overlay/...
 # This ensures the imager can find all files when extracting the overlay
-COPY install/ /install/
-COPY files/ /files/
+#
+# For the overlay-installer image, the imager expects:
+# - overlay-installer/overlay/artifacts/... (contains install/ and files/)
+# - overlay-installer/overlay/installers/{name} (the installer binary)
+#
+# So we need to create an artifacts/ directory that contains install/ and files/
+COPY install/ /artifacts/install/
+COPY files/ /artifacts/files/
 COPY overlay.yaml /overlay.yaml
 # Copy installer binary last - this ensures it's in the final layer
 # The installer must be at /installers/{overlay-name} in the image

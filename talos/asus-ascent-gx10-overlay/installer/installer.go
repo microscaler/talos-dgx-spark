@@ -105,7 +105,12 @@ func install() error {
 
 // installKernelModules installs NVIDIA kernel modules
 func installKernelModules(overlayPath, rootfsPath string) error {
-	sourceDir := filepath.Join(overlayPath, "install", "kernel-modules")
+	// Check both artifacts/install/ and install/ for backward compatibility
+	sourceDir := filepath.Join(overlayPath, "artifacts", "install", "kernel-modules")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		// Fallback to direct install/ path
+		sourceDir = filepath.Join(overlayPath, "install", "kernel-modules")
+	}
 	targetDir := filepath.Join(rootfsPath, "lib", "modules")
 
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
@@ -119,7 +124,12 @@ func installKernelModules(overlayPath, rootfsPath string) error {
 
 // installFirmware installs GPU firmware blobs
 func installFirmware(overlayPath, rootfsPath string) error {
-	sourceDir := filepath.Join(overlayPath, "install", "firmware")
+	// Check both artifacts/install/ and install/ for backward compatibility
+	sourceDir := filepath.Join(overlayPath, "artifacts", "install", "firmware")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		// Fallback to direct install/ path
+		sourceDir = filepath.Join(overlayPath, "install", "firmware")
+	}
 	targetDir := filepath.Join(rootfsPath, "lib", "firmware")
 
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
@@ -133,7 +143,12 @@ func installFirmware(overlayPath, rootfsPath string) error {
 
 // installConfigFiles installs configuration files
 func installConfigFiles(overlayPath, rootfsPath string) error {
-	filesDir := filepath.Join(overlayPath, "files")
+	// Check both artifacts/files/ and files/ for backward compatibility
+	filesDir := filepath.Join(overlayPath, "artifacts", "files")
+	if _, err := os.Stat(filesDir); os.IsNotExist(err) {
+		// Fallback to direct files/ path
+		filesDir = filepath.Join(overlayPath, "files")
+	}
 
 	if _, err := os.Stat(filesDir); os.IsNotExist(err) {
 		fmt.Printf("⚠️  Config files directory not found: %s (skipping)\n", filesDir)
