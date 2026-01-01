@@ -150,6 +150,17 @@ jobs:
           echo "✅ Overlay image built: ${IMAGE_TAG}"
           echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
     
+      - name: Pre-pull overlay image for imager
+        if: ${{ !env.ACT }}
+        run: |
+          OVERLAY_IMAGE="${{ steps.build_overlay_image.outputs.overlay_image || steps.overlay_meta.outputs.tags || 'ghcr.io/microscaler/talos-overlay-asus-ascent-gx10:latest' }}"
+          echo "📥 Pre-pulling overlay image: ${OVERLAY_IMAGE}"
+          echo "${GITHUB_TOKEN}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker pull "${OVERLAY_IMAGE}"
+          echo "✅ Overlay image pulled successfully"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
       - name: Build Talos image with overlay using Docker buildx
         id: build_image
         if: ${{ !env.ACT }}
