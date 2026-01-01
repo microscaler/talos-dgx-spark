@@ -125,38 +125,57 @@ jobs:
             exit 1
           fi
           
-          # Extract and search for installer in all layers
+          # Extract and find the last layer (which should contain our files)
           echo "   Searching for installer in image layers..."
           EXTRACT_DIR="/tmp/overlay-extract-$$"
           mkdir -p "${EXTRACT_DIR}"
           cd "${EXTRACT_DIR}"
           
-          # Extract the tar
+          # Extract the tar (OCI format)
           tar -xf "${TEMP_TAR}" 2>/dev/null || {
             echo "❌ Failed to extract image tar"
             rm -f "${TEMP_TAR}"
             exit 1
           }
           
-          # Find and check all layer tars
-          for layer_tar in */layer.tar; do
-            if [ -f "${layer_tar}" ]; then
-              # Check if installer is in this layer
-              if tar -tf "${layer_tar}" 2>/dev/null | grep -q "overlay/installers/asus-ascent-gx10-overlay"; then
-                echo "✅ Installer found in layer: ${layer_tar}"
-                # Extract and verify it's actually a file (not just a path)
-                tar -xf "${layer_tar}" overlay/installers/asus-ascent-gx10-overlay 2>/dev/null && {
-                  if [ -f "overlay/installers/asus-ascent-gx10-overlay" ]; then
-                    echo "✅ Installer binary verified!"
-                    ls -lh overlay/installers/asus-ascent-gx10-overlay
-                    file overlay/installers/asus-ascent-gx10-overlay
-                    INSTALLER_FOUND=true
-                    break
-                  fi
-                }
+          # Get the last layer from manifest.json (the final layer with our files)
+          LAST_LAYER=""
+          if [ -f "manifest.json" ]; then
+            LAST_LAYER=$(python3 -c "import json; m=json.load(open('manifest.json')); print(m[0]['Layers'][-1] if m and len(m)>0 and 'Layers' in m[0] else '')" 2>/dev/null || echo "")
+          fi
+          
+          if [ -z "${LAST_LAYER}" ] || [ ! -f "${LAST_LAYER}" ]; then
+            echo "❌ Could not find last layer in manifest"
+            echo "   Manifest contents:"
+            cat manifest.json 2>/dev/null || echo "   No manifest.json"
+            cd /
+            rm -rf "${EXTRACT_DIR}" "${TEMP_TAR}"
+            exit 1
+          fi
+          
+          echo "   Checking last layer: ${LAST_LAYER}"
+          
+          # Check if installer is in the last layer
+          if tar -tf "${LAST_LAYER}" 2>/dev/null | grep -q "overlay/installers/asus-ascent-gx10-overlay"; then
+            echo "✅ Installer path found in layer!"
+            # Extract and verify it's actually a file
+            tar -xf "${LAST_LAYER}" overlay/installers/asus-ascent-gx10-overlay 2>/dev/null && {
+              if [ -f "overlay/installers/asus-ascent-gx10-overlay" ]; then
+                echo "✅ Installer binary verified!"
+                ls -lh overlay/installers/asus-ascent-gx10-overlay
+                file overlay/installers/asus-ascent-gx10-overlay
+                INSTALLER_FOUND=true
+              else
+                echo "❌ Installer path exists but file extraction failed"
               fi
-            fi
-          done
+            } || {
+              echo "❌ Failed to extract installer from layer"
+            }
+          else
+            echo "❌ Installer path not found in last layer"
+            echo "   Contents of last layer:"
+            tar -tf "${LAST_LAYER}" 2>/dev/null | grep -E "overlay" | head -20 || echo "   No overlay directory found"
+          fi
           
           # Cleanup
           cd /
