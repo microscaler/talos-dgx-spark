@@ -54,6 +54,13 @@ talos/asus-ascent-gx10-overlay/installer/bin/
 talos/asus-ascent-gx10-overlay/installer/vendor/
 talos/asus-ascent-gx10-overlay/installers/
 
+# Docker image extraction artifacts (from docker save/testing)
+talos/asus-ascent-gx10-overlay/blobs/
+talos/asus-ascent-gx10-overlay/*.json
+talos/asus-ascent-gx10-overlay/oci-layout
+talos/asus-ascent-gx10-overlay/repositories
+talos/asus-ascent-gx10-overlay/overlay/
+
 # Extracted packages (source .deb files, not needed in repo)
 extracted/
 
