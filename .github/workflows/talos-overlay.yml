@@ -250,7 +250,7 @@ jobs:
         with:
           name: talos-image-${{ matrix.platform }}-${{ matrix.arch }}
           path: talos/output/talos-*.img
-          retention-days: 1  # Short retention - releases keep forever
+          retention-days: 1  # Minimum retention (1 day) - releases keep forever
           compression-level: 0  # Images are already compressed
     
       - name: Log in to GitHub Container Registry
