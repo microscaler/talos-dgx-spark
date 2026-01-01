@@ -159,22 +159,26 @@ jobs:
           if tar -tf "${LAST_LAYER}" 2>/dev/null | grep -q "overlay/installers/asus-ascent-gx10-overlay"; then
             echo "✅ Installer path found in layer!"
             # Extract and verify it's actually a file
-            tar -xf "${LAST_LAYER}" overlay/installers/asus-ascent-gx10-overlay 2>/dev/null && {
+            if tar -xf "${LAST_LAYER}" overlay/installers/asus-ascent-gx10-overlay 2>/dev/null; then
               if [ -f "overlay/installers/asus-ascent-gx10-overlay" ]; then
                 echo "✅ Installer binary verified!"
                 ls -lh overlay/installers/asus-ascent-gx10-overlay
                 file overlay/installers/asus-ascent-gx10-overlay
                 INSTALLER_FOUND=true
               else
-                echo "❌ Installer path exists but file extraction failed"
+                echo "❌ Installer path exists but file extraction failed - file not found after extraction"
+                echo "   Current directory: $(pwd)"
+                echo "   Files in overlay/installers/:"
+                ls -lah overlay/installers/ 2>/dev/null || echo "   Directory does not exist"
               fi
-            } || {
+            else
               echo "❌ Failed to extract installer from layer"
-            }
+              echo "   Extraction command failed"
+            fi
           else
             echo "❌ Installer path not found in last layer"
             echo "   Contents of last layer:"
-            tar -tf "${LAST_LAYER}" 2>/dev/null | grep -E "overlay" | head -20 || echo "   No overlay directory found"
+            tar -tf "${LAST_LAYER}" 2>/dev/null | grep -E "^overlay" | head -20 || echo "   No overlay directory found"
           fi
           
           # Cleanup
