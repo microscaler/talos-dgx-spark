@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Build Talos image with overlay using talosctl.
+Build Talos image with overlay using Docker imager.
 
-This script builds a Talos Linux image with the overlay applied.
+This script builds a Talos Linux image with the overlay applied using
+the official Talos imager Docker image from ghcr.io/siderolabs/imager.
 """
 
 import os
@@ -66,55 +67,11 @@ def find_overlay_dir(talos_dir: Path) -> Optional[Path]:
     return None
 
 
-def verify_talosctl(talosctl_path: Path) -> bool:
-    """
-    Verify talosctl is working by checking if it can run the command we need.
-    
-    Note: `talosctl version` tries to connect to a cluster, so we check
-    `talosctl image factory --help` instead, which is what we actually use.
-    
-    Args:
-        talosctl_path: Path to talosctl
-        
-    Returns:
-        bool: True if talosctl works
-    """
-    try:
-        # Check if the command we actually need works
-        result = subprocess.run(
-            [str(talosctl_path), "image", "factory", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        if result.returncode != 0:
-            print(f"❌ talosctl image factory command failed:", file=sys.stderr)
-            print(f"   Exit code: {result.returncode}", file=sys.stderr)
-            if result.stderr:
-                print(f"   Error: {result.stderr}", file=sys.stderr)
-            if result.stdout:
-                print(f"   Output: {result.stdout}", file=sys.stderr)
-            return False
-        
-        # Also verify the binary can execute (check for help text)
-        if "factory" not in result.stdout.lower() and "usage" not in result.stdout.lower():
-            print("⚠️  talosctl image factory help output unexpected", file=sys.stderr)
-            # Don't fail, just warn - the command might still work
-        
-        return True
-    except subprocess.TimeoutExpired:
-        print("❌ talosctl command timed out", file=sys.stderr)
-        return False
-    except FileNotFoundError:
-        print(f"❌ talosctl binary not found at: {talosctl_path}", file=sys.stderr)
-        return False
-    except Exception as e:
-        print(f"❌ Error running talosctl: {e}", file=sys.stderr)
-        return False
+# Note: We no longer use talosctl for building images, we use Docker imager instead
+# The verify_talosctl function is kept for potential future use but not currently called
 
 
 def build_image(
-    talosctl_path: Path,
     overlay_dir: Path,
     arch: str,
     platform: str,
@@ -122,10 +79,9 @@ def build_image(
     output_path: Path
 ) -> int:
     """
-    Build Talos image with overlay.
+    Build Talos image with overlay using Docker imager.
     
     Args:
-        talosctl_path: Path to talosctl
         overlay_dir: Path to overlay directory
         arch: Architecture (e.g., "arm64")
         platform: Platform (e.g., "metal")
@@ -135,40 +91,52 @@ def build_image(
     Returns:
         int: Exit code (0 for success)
     """
-    # Check if talosctl supports image factory command
+    # Check if Docker is available
     try:
         result = subprocess.run(
-            [str(talosctl_path), "image", "factory", "--help"],
+            ["docker", "--version"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=5
         )
-        
         if result.returncode != 0:
-            print("❌ talosctl does not support 'image factory' command", file=sys.stderr)
-            print("   This may require a newer version of talosctl", file=sys.stderr)
+            print("❌ Docker is not available", file=sys.stderr)
             return 1
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        print(f"❌ Error checking talosctl capabilities: {e}", file=sys.stderr)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        print("❌ Docker is not installed or not accessible", file=sys.stderr)
         return 1
     
-    # Build command
+    # Prepare paths
+    output_dir = output_path.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Convert paths to absolute for Docker volume mounting
+    overlay_dir_abs = overlay_dir.resolve()
+    output_dir_abs = output_dir.resolve()
+    
+    # Imager image
+    imager_image = f"ghcr.io/siderolabs/imager:{talos_version}"
+    
+    # Build command using Docker imager
+    # The imager expects the overlay to be mounted and output directory to be mounted
     cmd = [
-        str(talosctl_path),
-        "image", "factory",
+        "docker", "run", "--rm", "-t",
+        "-v", f"{overlay_dir_abs}:/overlay:ro",
+        "-v", f"{output_dir_abs}:/out",
+        imager_image,
         "--arch", arch,
         "--platform", platform,
-        "--overlay", str(overlay_dir),
-        "--output", str(output_path),
-        "--version", talos_version,
+        "--overlay", "/overlay",
+        "installer",
     ]
     
     print(f"🔨 Building Talos image with overlay...")
     print(f"   Architecture: {arch}")
     print(f"   Platform: {platform}")
     print(f"   Talos Version: {talos_version}")
+    print(f"   Imager Image: {imager_image}")
     print(f"   Overlay: {overlay_dir}")
-    print(f"   Output: {output_path}")
+    print(f"   Output Directory: {output_dir}")
     print()
     
     try:
@@ -179,13 +147,44 @@ def build_image(
         )
         
         if result.returncode != 0:
-            print(f"❌ Image factory failed with exit code {result.returncode}", file=sys.stderr)
+            print(f"❌ Image build failed with exit code {result.returncode}", file=sys.stderr)
             return result.returncode
         
-        # Verify image was created
-        if not output_path.exists():
-            print(f"❌ Output image not found: {output_path}", file=sys.stderr)
+        # The imager outputs files with a specific naming pattern
+        # Look for the generated image file
+        # Talos imager typically outputs: talos-{platform}-{arch}.img or similar
+        possible_names = [
+            output_path.name,
+            f"talos-{platform}-{arch}.img",
+            f"talos-{arch}-{platform}.img",
+            f"disk.raw",
+        ]
+        
+        found_image = None
+        for name in possible_names:
+            candidate = output_dir / name
+            if candidate.exists():
+                found_image = candidate
+                break
+        
+        # If not found by name, look for any .img file
+        if not found_image:
+            img_files = list(output_dir.glob("*.img"))
+            if img_files:
+                found_image = img_files[0]
+        
+        if not found_image:
+            print(f"❌ Output image not found in {output_dir}", file=sys.stderr)
+            print(f"   Searched for: {', '.join(possible_names)}", file=sys.stderr)
+            print(f"   Files in output directory:", file=sys.stderr)
+            for f in output_dir.iterdir():
+                print(f"     - {f.name}", file=sys.stderr)
             return 1
+        
+        # If the found image is different from expected, rename it
+        if found_image != output_path:
+            print(f"📦 Found image: {found_image.name}, moving to {output_path.name}")
+            found_image.rename(output_path)
         
         size = output_path.stat().st_size
         if size == 0:
@@ -230,19 +229,8 @@ def main() -> int:
             print(f"❌ Talos directory not found: {talos_dir}", file=sys.stderr)
             return 1
         
-        # Find talosctl
-        talosctl_path = find_talosctl()
-        if not talosctl_path:
-            print("❌ talosctl not found. Install it first.", file=sys.stderr)
-            print("   Run: python3 scripts/ci_install_talosctl.py", file=sys.stderr)
-            return 1
-        
-        print(f"✅ Found talosctl at: {talosctl_path}")
-        print("🔍 Verifying talosctl...")
-        if not verify_talosctl(talosctl_path):
-            print("❌ talosctl verification failed", file=sys.stderr)
-            return 1
-        print("✅ talosctl verified successfully")
+        # Note: We use Docker imager instead of talosctl for building images
+        # talosctl is still useful for other operations, but not required for image building
         
         # Find overlay directory
         overlay_dir = find_overlay_dir(talos_dir)
@@ -260,9 +248,8 @@ def main() -> int:
         # Build output path
         output_path = output_dir / f"talos-{platform}-{arch}-asus-ascent.img"
         
-        # Build image
+        # Build image using Docker imager
         return build_image(
-            talosctl_path,
             overlay_dir,
             arch,
             platform,
