@@ -83,8 +83,23 @@ def verify_talosctl(talosctl_path: Path) -> bool:
             text=True,
             timeout=10
         )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        if result.returncode != 0:
+            print(f"❌ talosctl version command failed:", file=sys.stderr)
+            print(f"   Exit code: {result.returncode}", file=sys.stderr)
+            if result.stderr:
+                print(f"   Error: {result.stderr}", file=sys.stderr)
+            if result.stdout:
+                print(f"   Output: {result.stdout}", file=sys.stderr)
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        print("❌ talosctl version command timed out", file=sys.stderr)
+        return False
+    except FileNotFoundError:
+        print(f"❌ talosctl binary not found at: {talosctl_path}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"❌ Error running talosctl: {e}", file=sys.stderr)
         return False
 
 
@@ -212,9 +227,12 @@ def main() -> int:
             print("   Run: python3 scripts/ci_install_talosctl.py", file=sys.stderr)
             return 1
         
+        print(f"✅ Found talosctl at: {talosctl_path}")
+        print("🔍 Verifying talosctl...")
         if not verify_talosctl(talosctl_path):
-            print("❌ talosctl is not working correctly", file=sys.stderr)
+            print("❌ talosctl verification failed", file=sys.stderr)
             return 1
+        print("✅ talosctl verified successfully")
         
         # Find overlay directory
         overlay_dir = find_overlay_dir(talos_dir)
