@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+
+# Environment
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Go build artifacts (for Talos installer)
+talos/asus-ascent-gx10-overlay/installer/bin/
+talos/asus-ascent-gx10-overlay/installer/vendor/
+
+# Extracted packages (source .deb files, not needed in repo)
+extracted/
+
+# Output directory (build artifacts - keep .tar.gz via LFS, ignore others)
+talos/output/*
+!talos/output/.gitkeep
+!talos/output/*.tar.gz
+
+# Python cache in scripts
+talos/scripts/__pycache__/
+scripts/__pycache__/
+
+# Test artifacts
+test-results/
+coverage/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+

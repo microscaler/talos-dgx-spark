@@ -1,0 +1,91 @@
+# Example Dockerfile for ASUS Ascent GX10 Kubernetes Worker Node Image
+# This extends the base ASUS image with Kubernetes components
+#
+# Usage (Production - GCS):
+#   docker build \
+#     --build-arg REPO_URL=https://storage.googleapis.com/asus-ascent-gb10/7.2.3 \
+#     -t asus-ascent-k8s-worker:24.04 \
+#     -f dockerfiles/Dockerfile.asus-ascent-k8s-worker.example .
+#
+# Usage (Local Development):
+#   docker build \
+#     --build-arg REPO_URL=http://host.docker.internal:8000 \
+#     -t asus-ascent-k8s-worker:24.04 \
+#     -f dockerfiles/Dockerfile.asus-ascent-k8s-worker.example .
+
+ARG REPO_URL=https://storage.googleapis.com/asus-ascent-gb10/7.2.3
+ARG REPO_TRUSTED=yes
+
+# Stage 1: Base ASUS image
+FROM ubuntu:24.04 AS asus-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Add ASUS repository
+# Default: GCS bucket at https://storage.googleapis.com/asus-ascent-gb10/7.2.3
+# Override with --build-arg REPO_URL=<your-url> for local development
+RUN echo "deb [trusted=${REPO_TRUSTED}] ${REPO_URL}/ ./" > /etc/apt/sources.list.d/asus-ascent.list && \
+    apt-get update
+
+# Install ASUS-specific packages
+RUN apt-get install -y --no-install-recommends \
+        asus-ascent-gx10-desktop-customize \
+        asus-ascent-gx10-oobe-customize \
+    && rm -rf /var/lib/apt/lists/*
+
+# Stage 2: Add Kubernetes components
+FROM asus-base AS k8s-worker
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Kubernetes prerequisites
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        apt-transport-https \
+        gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Kubernetes repository
+RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | \
+        gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg && \
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | \
+        tee /etc/apt/sources.list.d/kubernetes.list
+
+# Install Kubernetes components
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        kubelet \
+        kubeadm \
+        kubectl \
+        containerd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Hold Kubernetes packages to prevent automatic updates
+RUN apt-mark hold kubelet kubeadm kubectl
+
+# Configure containerd
+RUN mkdir -p /etc/containerd && \
+    containerd config default | tee /etc/containerd/config.toml
+
+# Enable systemd cgroup driver for containerd
+RUN sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+# Create necessary directories
+RUN mkdir -p /var/lib/kubelet \
+             /var/lib/etcd \
+             /etc/kubernetes/manifests
+
+# Set working directory
+WORKDIR /root
+
+# Note: This image is a base image for Kubernetes worker nodes
+# Additional configuration may be required:
+# - Network configuration
+# - Storage drivers
+# - Device plugins (if needed for ASUS hardware)
+# - CNI plugins
+
+CMD ["/bin/bash"]
+

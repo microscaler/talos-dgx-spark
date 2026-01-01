@@ -1,0 +1,47 @@
+# Example Dockerfile for ASUS Ascent GX10 Base Image
+# This demonstrates how to use the ASUS repository in a Docker image
+#
+# Usage (Production - GCS):
+#   docker build \
+#     --build-arg REPO_URL=https://storage.googleapis.com/asus-ascent-gb10/7.2.3 \
+#     -t asus-ascent-base:24.04 \
+#     -f dockerfiles/Dockerfile.asus-ascent-base.example .
+#
+# Usage (Local Development):
+#   docker build \
+#     --build-arg REPO_URL=http://host.docker.internal:8000 \
+#     -t asus-ascent-base:24.04 \
+#     -f dockerfiles/Dockerfile.asus-ascent-base.example .
+
+ARG REPO_URL=https://storage.googleapis.com/asus-ascent-gb10/7.2.3
+ARG REPO_TRUSTED=yes
+FROM ubuntu:24.04
+
+# Set non-interactive frontend for apt
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Add ASUS repository
+# Default: GCS bucket at https://storage.googleapis.com/asus-ascent-gb10/7.2.3
+# Override with --build-arg REPO_URL=<your-url> for local development
+RUN echo "deb [trusted=${REPO_TRUSTED}] ${REPO_URL}/ ./" > /etc/apt/sources.list.d/asus-ascent.list && \
+    apt-get update
+
+# Install ASUS-specific packages
+# These packages provide ASUS Ascent GX10 customizations
+RUN apt-get install -y --no-install-recommends \
+        asus-ascent-gx10-desktop-customize \
+        asus-ascent-gx10-oobe-customize \
+    && rm -rf /var/lib/apt/lists/*
+
+# Optional: Install additional packages that might be needed
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#         <your-packages-here> \
+#     && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /root
+
+# Default command
+CMD ["/bin/bash"]
+

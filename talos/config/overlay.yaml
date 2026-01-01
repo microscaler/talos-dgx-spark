@@ -1,0 +1,75 @@
+# ASUS Ascent GX10 Talos Overlay Configuration
+# Metadata and configuration for the overlay
+
+name: asus-ascent-gx10
+version: 1.0.0
+description: Talos overlay for ASUS Ascent GX10 with NVIDIA GPU support
+author: Microscaler
+license: MPL-2.0
+
+# Target architecture
+architectures:
+  - arm64
+
+# Talos version compatibility
+talos_min_version: "1.8.0"
+talos_max_version: "2.0.0"
+
+# Kernel requirements
+kernel:
+  min_version: "6.1.0"
+  max_version: "6.15.0"
+  required_modules:
+    - nvidia
+    - nvidia-modeset
+    - nvidia-uvm
+    - nvidia-drm
+
+# Hardware requirements
+hardware:
+  - asus-ascent-gx10
+  - nvidia-gpu
+
+# Dependencies
+dependencies:
+  - name: nvidia-driver
+    version: "580.x"
+    type: kernel-module
+  - name: nvidia-firmware
+    version: "580.95.05"
+    type: firmware
+
+# Components
+components:
+  kernel_modules:
+    - nvidia.ko
+    - nvidia-modeset.ko
+    - nvidia-uvm.ko
+    - nvidia-drm.ko
+  firmware:
+    - nvidia/gp104/
+    - linux-firmware/
+  configurations:
+    - etc/modprobe.d/nvidia.conf
+    - etc/modules-load.d/nvidia.conf
+
+# Boot parameters
+boot_params:
+  - nvidia.NVreg_DeviceFileUID=0
+  - nvidia.NVreg_DeviceFileGID=0
+  - nvidia.NVreg_DeviceFileMode=0666
+  - nvidia.NVreg_UseThreadedInterrupts=1
+
+# Installation order
+install_order:
+  1: firmware
+  2: kernel_modules
+  3: configurations
+  4: boot_params
+
+# Validation
+validation:
+  - check_gpu_detection
+  - check_module_loading
+  - check_firmware_loading
+

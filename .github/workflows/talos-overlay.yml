@@ -1,0 +1,265 @@
+name: Build Talos Overlay
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'talos/**'
+      - '.github/workflows/talos-overlay.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'talos/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Overlay version (e.g., 1.0.0)'
+        required: false
+        default: '1.0.0'
+      build_image:
+        description: 'Build Talos image with overlay'
+        required: false
+        default: 'true'
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: microscaler
+  TALOS_VERSION: v1.8.0  # Update as needed
+  OVERLAY_NAME: asus-ascent-gx10
+
+jobs:
+  build-overlay:
+    name: Build Talos Overlay Package
+    runs-on: ubuntu-latest
+    env:
+      BRRTR_LOCAL: "1"  # Indicates local development mode
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          lfs: true  # Checkout Git LFS files
+    
+      - name: Set up Docker Buildx
+        if: ${{ !env.ACT }}
+        uses: docker/setup-buildx-action@v3
+    
+      - name: Set up QEMU (for ARM64 emulation)
+        if: ${{ !env.ACT }}
+        uses: docker/setup-qemu-action@v3
+    
+      - name: Log in to GitHub Container Registry
+        if: ${{ !env.ACT }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+    
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+    
+      - name: Extract overlay version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            python3 talos/scripts/ci_extract_version.py "${{ github.event.inputs.version }}"
+          else
+            python3 talos/scripts/ci_extract_version.py
+          fi
+    
+      - name: Verify overlay components
+        run: python3 talos/scripts/ci_verify_components.py
+    
+      - name: Build overlay package
+        env:
+          OVERLAY_VERSION: ${{ steps.version.outputs.version }}
+        run: python3 talos/scripts/ci_build_overlay.py
+    
+      - name: Upload overlay package artifact
+        if: ${{ !env.ACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: talos-overlay-package
+          path: talos/output/*.tar.gz
+          retention-days: 30
+    
+      - name: Extract metadata
+        if: ${{ !env.ACT }}
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=sha,prefix={{branch}}-
+            type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
+
+  build-talos-image:
+    name: Build Talos Image with Overlay
+    runs-on: ubuntu-latest
+    needs: build-overlay
+    if: ${{ github.event.inputs.build_image != 'false' && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
+    env:
+      BRRTR_LOCAL: "1"  # Indicates local development mode
+    permissions:
+      contents: read
+      packages: write
+    
+    strategy:
+      matrix:
+        arch: [arm64]  # ASUS Ascent GX10 is ARM64
+        platform: [metal]  # Can add: aws, azure, gcp, etc.
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+    
+      - name: Set up Docker Buildx
+        if: ${{ !env.ACT }}
+        uses: docker/setup-buildx-action@v3
+    
+      - name: Set up QEMU (for ARM64 emulation)
+        if: ${{ !env.ACT }}
+        uses: docker/setup-qemu-action@v3
+    
+      - name: Download overlay package artifact
+        if: ${{ !env.ACT }}
+        uses: actions/download-artifact@v4
+        with:
+          name: talos-overlay-package
+          path: talos/output/
+    
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+    
+      - name: Extract overlay package
+        if: ${{ !env.ACT }}
+        run: python3 talos/scripts/ci_extract_package.py
+      
+      - name: Extract overlay package (ACT fallback)
+        if: ${{ env.ACT }}
+        run: |
+          # For ACT, assume package is already built locally
+          echo "⚠️  ACT mode: Skipping package extraction (assume already built)"
+          if [ ! -d "talos/asus-ascent-gx10-overlay" ]; then
+            echo "❌ Overlay directory not found. Build overlay first with: python3 talos/scripts/ci_build_overlay.py"
+            exit 1
+          fi
+    
+      - name: Install talosctl
+        env:
+          TALOS_VERSION: ${{ env.TALOS_VERSION }}
+        run: python3 talos/scripts/ci_install_talosctl.py
+    
+      - name: Build Talos image with overlay
+        env:
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          TALOS_VERSION: ${{ env.TALOS_VERSION }}
+        run: python3 talos/scripts/ci_build_talos_image.py
+    
+      - name: Upload Talos image artifact
+        if: ${{ !env.ACT && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: talos-image-${{ matrix.platform }}-${{ matrix.arch }}
+          path: talos/output/talos-*.img
+          retention-days: 30
+          compression-level: 0  # Images are already compressed
+    
+      - name: Log in to GitHub Container Registry
+        if: ${{ !env.ACT }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+    
+      - name: Get overlay version from package
+        id: overlay_version
+        run: python3 talos/scripts/ci_extract_version_from_package.py
+    
+      - name: Upload image to GitHub Releases (if on main)
+        if: ${{ !env.ACT && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: talos/output/talos-*.img
+          tag_name: talos-overlay-${{ steps.overlay_version.outputs.version }}
+          name: Talos Overlay ${{ steps.overlay_version.outputs.version }}
+          body: |
+            Talos Linux image with ASUS Ascent GX10 overlay
+            
+            **Architecture:** ${{ matrix.arch }}
+            **Platform:** ${{ matrix.platform }}
+            **Talos Version:** ${{ env.TALOS_VERSION }}
+            **Overlay Version:** ${{ steps.overlay_version.outputs.version }}
+            
+            ## Installation
+            
+            Download and flash this image to your ASUS Ascent GX10 hardware.
+            
+            ## Components Included
+            
+            - NVIDIA GPU kernel modules
+            - NVIDIA GPU firmware
+            - Hardware-specific configurations
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-overlay:
+    name: Test Overlay Package
+    runs-on: ubuntu-latest
+    needs: build-overlay
+    env:
+      BRRTR_LOCAL: "1"  # Indicates local development mode
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+    
+      - name: Download overlay package artifact
+        if: ${{ !env.ACT }}
+        uses: actions/download-artifact@v4
+        with:
+          name: talos-overlay-package
+          path: talos/output/
+      
+      - name: Verify overlay package exists (ACT fallback)
+        if: ${{ env.ACT }}
+        run: |
+          # For ACT, check if package exists locally
+          if [ ! -f "talos/output"/*.tar.gz ]; then
+            echo "⚠️  ACT mode: No package found. Build overlay first with: python3 talos/scripts/ci_build_overlay.py"
+            echo "   Or place package in talos/output/"
+            exit 1
+          fi
+          echo "✅ Found package in talos/output/"
+    
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+    
+      - name: Verify overlay package structure
+        run: python3 talos/scripts/ci_verify_package.py
+

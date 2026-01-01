@@ -1,0 +1,8 @@
+name: asus-ascent-gx10
+version: 1.0.0
+description: Talos overlay for ASUS Ascent GX10 with NVIDIA GPU support
+architectures:
+  - arm64
+components:
+  kernel_modules: 1058
+  firmware: 4807

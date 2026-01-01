@@ -1,0 +1,25 @@
+# Build artifacts
+# Note: Binary files (firmware, kernel modules) are tracked via Git LFS
+# See .gitattributes for LFS configuration
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Go build artifacts
+installer/bin/
+installer/vendor/
+
+# Extracted packages (source .deb files, not needed in repo)
+extracted/
+
+# Note: *.deb, *.tar.gz are tracked via Git LFS in .gitattributes
+# Only ignore if they're in extracted/ or other temporary locations
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+

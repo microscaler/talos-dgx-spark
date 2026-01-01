@@ -1,0 +1,79 @@
+# Example Dockerfile for ASUS Ascent GX10 Base Image with Authenticated GCS Access
+# This demonstrates how to use an authenticated GCS bucket for the ASUS repository
+#
+# Usage (with Signed URL):
+#   SIGNED_URL=$(gsutil signurl -d 1h service-account-key.json \
+#       gs://asus-ascent-gb10/7.2.3/dists/noble/Release | grep -o 'https://[^ ]*')
+#   docker build \
+#       --build-arg REPO_SIGNED_URL="${SIGNED_URL}" \
+#       -t asus-ascent-base:24.04 \
+#       -f dockerfiles/Dockerfile.asus-ascent-authenticated.example .
+#
+# Usage (with Build Secrets - Pre-download approach):
+#   docker build \
+#       --secret id=gcp_credentials,src=/path/to/service-account-key.json \
+#       -t asus-ascent-base:24.04 \
+#       -f dockerfiles/Dockerfile.asus-ascent-authenticated.example .
+
+# syntax=docker/dockerfile:1.4
+
+ARG REPO_SIGNED_URL
+FROM ubuntu:24.04
+
+# Set non-interactive frontend for apt
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Option 1: Use Signed URL (if provided)
+# Signed URLs are time-limited and don't require credentials in the image
+RUN if [ -n "${REPO_SIGNED_URL}" ]; then \
+        echo "deb [trusted=yes] ${REPO_SIGNED_URL} ./" > /etc/apt/sources.list.d/asus-ascent.list && \
+        apt-get update && \
+        apt-get install -y --no-install-recommends \
+            asus-ascent-gx10-desktop-customize \
+            asus-ascent-gx10-oobe-customize \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Option 2: Pre-download with Build Secrets (if signed URL not provided)
+# This approach uses gcloud CLI to authenticate and download packages
+RUN --mount=type=secret,id=gcp_credentials \
+    if [ -z "${REPO_SIGNED_URL}" ]; then \
+        # Install gcloud CLI
+        apt-get update && apt-get install -y --no-install-recommends \
+            curl \
+            gnupg \
+            ca-certificates && \
+        curl https://sdk.cloud.google.com | bash && \
+        export PATH=$PATH:/root/google-cloud-sdk/bin && \
+        # Authenticate using build secret
+        export GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_credentials && \
+        gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS && \
+        # Download repository metadata
+        mkdir -p /tmp/asus-repo && \
+        gsutil -m cp -r gs://asus-ascent-gb10/7.2.3/dists /tmp/asus-repo/ && \
+        gsutil -m cp -r gs://asus-ascent-gb10/7.2.3/pool /tmp/asus-repo/ && \
+        gsutil -m cp -r gs://asus-ascent-gb10/7.2.3/oemdata /tmp/asus-repo/ && \
+        # Create local repository
+        echo "deb [trusted=yes] file:///tmp/asus-repo ./" > /etc/apt/sources.list.d/asus-ascent.list && \
+        apt-get update && \
+        apt-get install -y --no-install-recommends \
+            asus-ascent-gx10-desktop-customize \
+            asus-ascent-gx10-oobe-customize \
+        && rm -rf /var/lib/apt/lists/* \
+        && rm -rf /tmp/asus-repo \
+        && rm -rf /root/google-cloud-sdk; \
+    fi
+
+# Set working directory
+WORKDIR /root
+
+# Default command
+CMD ["/bin/bash"]
+
+# Notes:
+# - Option 1 (Signed URL) is simpler but requires generating new URLs for each build
+# - Option 2 (Build Secrets) downloads the entire repository, which may be slow
+# - For production, consider using a proxy service that handles authentication
+# - Never commit service account keys to version control
+# - Use Docker build secrets to keep credentials out of the final image
+
