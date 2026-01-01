@@ -101,16 +101,29 @@ jobs:
           # Build installer binary
           cd "${INSTALLER_DIR}"
           if [ -f "go.mod" ]; then
-            # Download dependencies
-            echo "📥 Downloading Talos dependencies..."
+            # Verify Go version
+            GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+            echo "🔍 Go version: ${GO_VERSION}"
+            
+            # Download dependencies and generate go.sum
+            echo "📥 Downloading Talos dependencies and generating go.sum..."
             go mod download || {
               echo "❌ Failed to download Talos dependencies"
               exit 1
             }
             
-            # Verify Go version
-            GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-            echo "🔍 Go version: ${GO_VERSION}"
+            # Run go mod tidy to ensure go.sum is up to date
+            go mod tidy || {
+              echo "❌ Failed to run go mod tidy"
+              exit 1
+            }
+            
+            # Verify go.sum exists
+            if [ ! -f "go.sum" ]; then
+              echo "❌ go.sum file not generated"
+              exit 1
+            fi
+            echo "✅ Dependencies downloaded and go.sum generated"
             
             # Build installer binary
             echo "🔨 Building installer binary for linux/arm64..."
