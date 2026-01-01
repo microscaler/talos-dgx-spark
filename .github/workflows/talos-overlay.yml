@@ -86,47 +86,28 @@ jobs:
           # Use GitHub Actions workspace variable for absolute paths
           WORKSPACE="${GITHUB_WORKSPACE}"
           OVERLAY_DIR="${WORKSPACE}/talos/asus-ascent-gx10-overlay"
-          INSTALLER_DIR="${OVERLAY_DIR}/installer"
+          DOCKERFILE="${OVERLAY_DIR}/Dockerfile"
           DOCKERHUB_TAG="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
           DOCKERHUB_LATEST="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
           
           echo "📦 Building overlay as OCI image (multi-stage): ${DOCKERHUB_TAG}"
           echo "   Workspace: ${WORKSPACE}"
           echo "   Overlay dir: ${OVERLAY_DIR}"
-          echo "   Installer dir: ${INSTALLER_DIR}"
+          echo "   Dockerfile: ${DOCKERFILE}"
           
-          # Create multi-stage Dockerfile
-          # Stage 1: Build installer binary using Go
-          # Stage 2: Copy overlay files and installer into scratch image
-          cat > /tmp/overlay.Dockerfile <<EOF
-          # Stage 1: Build installer binary
-          FROM --platform=linux/arm64 golang:1.22.7-alpine AS builder
-          WORKDIR /build
-          COPY talos/asus-ascent-gx10-overlay/installer/ ./installer/
-          WORKDIR /build/installer
-          RUN go mod tidy && \
-              GOOS=linux GOARCH=arm64 go build -o /build/installer/asus-ascent-gx10-overlay ./installer.go && \
-              chmod +x /build/installer/asus-ascent-gx10-overlay
+          # Verify Dockerfile exists
+          if [ ! -f "${DOCKERFILE}" ]; then
+            echo "❌ Dockerfile not found at ${DOCKERFILE}"
+            exit 1
+          fi
           
-          # Stage 2: Create overlay image
-          FROM scratch
-          # Copy overlay files (excluding installer source)
-          COPY talos/asus-ascent-gx10-overlay/install/ /overlay/install/
-          COPY talos/asus-ascent-gx10-overlay/files/ /overlay/files/
-          COPY talos/asus-ascent-gx10-overlay/overlay.yaml /overlay/overlay.yaml
-          # Copy built installer binary
-          COPY --from=builder /build/installer/asus-ascent-gx10-overlay /overlay/installers/asus-ascent-gx10-overlay
-          EOF
-          
-          # Build overlay image locally (from workspace root)
-          cd "${WORKSPACE}"
-          echo "🔨 Building Docker image from workspace: ${WORKSPACE}"
-          echo "   Dockerfile:"
-          cat /tmp/overlay.Dockerfile
+          # Build overlay image from overlay directory
+          cd "${OVERLAY_DIR}"
+          echo "🔨 Building Docker image from overlay directory..."
           
           docker build \
             --platform linux/arm64 \
-            --file /tmp/overlay.Dockerfile \
+            --file Dockerfile \
             --tag "${DOCKERHUB_TAG}" \
             --tag "${DOCKERHUB_LATEST}" \
             .
