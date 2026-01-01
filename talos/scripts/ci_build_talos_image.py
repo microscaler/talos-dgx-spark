@@ -124,7 +124,8 @@ COPY . /overlay/
 
 
 def build_image(
-    overlay_dir: Path,
+    overlay_image_ref: str,
+    overlay_name: str,
     arch: str,
     platform: str,
     talos_version: str,
@@ -134,7 +135,8 @@ def build_image(
     Build Talos image with overlay using Docker imager.
     
     Args:
-        overlay_dir: Path to overlay directory
+        overlay_image_ref: OCI image reference for the overlay
+        overlay_name: Name of the overlay
         arch: Architecture (e.g., "arm64")
         platform: Platform (e.g., "metal")
         talos_version: Talos version
@@ -162,24 +164,18 @@ def build_image(
     output_dir = output_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Build overlay as OCI image
-    overlay_name = overlay_dir.name
-    try:
-        overlay_image_ref = build_overlay_image(overlay_dir, overlay_name)
-    except Exception as e:
-        print(f"❌ Failed to build overlay image: {e}", file=sys.stderr)
-        return 1
-    
     # Convert paths to absolute for Docker volume mounting
     output_dir_abs = output_dir.resolve()
     
-    # Imager image
+    # Use Docker buildx with Talos imager
+    # The imager expects overlay-image (OCI image) and overlay-name
     imager_image = f"ghcr.io/siderolabs/imager:{talos_version}"
     
-    # Build command using Docker imager
-    # The imager expects overlay-image (OCI image) and overlay-name
+    # Build command using Docker buildx (Talos build tools)
+    # This uses the imager container with proper buildx integration
     cmd = [
         "docker", "run", "--rm", "-t",
+        "--platform", f"linux/{arch}",
         "-v", f"{output_dir_abs}:/out",
         imager_image,
         "installer",
@@ -187,6 +183,7 @@ def build_image(
         "--platform", platform,
         "--overlay-image", overlay_image_ref,
         "--overlay-name", overlay_name,
+        "--output", "/out",
     ]
     
     print(f"🔨 Building Talos image with overlay...")
@@ -277,8 +274,32 @@ def main() -> int:
         arch = os.environ.get("ARCH", "arm64")
         platform = os.environ.get("PLATFORM", "metal")
         talos_version = os.environ.get("TALOS_VERSION", "v1.8.0")
+        overlay_image_ref = os.environ.get("OVERLAY_IMAGE")
+        overlay_name = os.environ.get("OVERLAY_NAME", "asus-ascent-gx10-overlay")
         
-        # Get talos directory
+        # If overlay image not provided, try to build locally (fallback)
+        if not overlay_image_ref:
+            print("⚠️  OVERLAY_IMAGE not set, attempting to build overlay locally...")
+            talos_dir = Path(os.getcwd())
+            if (talos_dir / "talos").exists():
+                talos_dir = talos_dir / "talos"
+            elif not (talos_dir / "asus-ascent-gx10-overlay").exists():
+                talos_dir = talos_dir.parent / "talos"
+            
+            overlay_dir = find_overlay_dir(talos_dir)
+            if not overlay_dir:
+                print("❌ Overlay directory not found and OVERLAY_IMAGE not set!", file=sys.stderr)
+                return 1
+            
+            try:
+                overlay_image_ref = build_overlay_image(overlay_dir, overlay_name)
+            except Exception as e:
+                print(f"❌ Failed to build overlay image: {e}", file=sys.stderr)
+                return 1
+        else:
+            print(f"✅ Using overlay image from registry: {overlay_image_ref}")
+        
+        # Get talos directory for output
         talos_dir = Path(os.getcwd())
         if (talos_dir / "talos").exists():
             talos_dir = talos_dir / "talos"
@@ -289,18 +310,6 @@ def main() -> int:
             print(f"❌ Talos directory not found: {talos_dir}", file=sys.stderr)
             return 1
         
-        # Note: We use Docker imager instead of talosctl for building images
-        # talosctl is still useful for other operations, but not required for image building
-        
-        # Find overlay directory
-        overlay_dir = find_overlay_dir(talos_dir)
-        if not overlay_dir:
-            print("❌ Overlay directory not found!", file=sys.stderr)
-            print(f"   Searched in: {talos_dir}", file=sys.stderr)
-            return 1
-        
-        print(f"✅ Overlay found at: {overlay_dir}")
-        
         # Create output directory
         output_dir = talos_dir / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -310,7 +319,8 @@ def main() -> int:
         
         # Build image using Docker imager
         return build_image(
-            overlay_dir,
+            overlay_image_ref,
+            overlay_name,
             arch,
             platform,
             talos_version,

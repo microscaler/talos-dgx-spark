@@ -87,90 +87,88 @@ jobs:
       - name: Verify overlay components
         run: python3 talos/scripts/ci_verify_components.py
     
-      - name: Build overlay package
-        env:
-          OVERLAY_VERSION: ${{ steps.version.outputs.version }}
-        run: python3 talos/scripts/ci_build_overlay.py
-      
-      - name: Verify package was created
-        id: verify_package
+      - name: Extract metadata for overlay image
+        if: ${{ !env.ACT }}
+        id: overlay_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=sha,prefix={{branch}}-
+            type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
+    
+      - name: Build overlay as OCI image
+        if: ${{ !env.ACT }}
+        id: build_overlay_image
         run: |
-          PACKAGE=$(ls talos/output/*.tar.gz 2>/dev/null | head -1)
-          if [ -z "${PACKAGE}" ]; then
-            echo "❌ Overlay package not found in talos/output/"
-            exit 1
-          fi
-          echo "✅ Package created: ${PACKAGE}"
-          ls -lh "${PACKAGE}"
-          echo "package_path=${PACKAGE}" >> $GITHUB_OUTPUT
-    
-      - name: Upload overlay package artifact
-        if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: talos-overlay-package-${{ steps.version.outputs.version }}
-          path: talos/output/*.tar.gz
-          retention-days: 1  # Short retention - releases keep forever
-          if-no-files-found: error
-          compression-level: 6
+          OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
+          LATEST_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
+          
+          echo "📦 Building overlay as OCI image: ${IMAGE_TAG}"
+          
+          # Create temporary Dockerfile for overlay
+          cat > /tmp/overlay.Dockerfile <<EOF
+          FROM scratch
+          COPY ${OVERLAY_DIR} /overlay/
+          EOF
+          
+          # Build and push overlay image
+          docker buildx build \
+            --platform linux/arm64 \
+            --file /tmp/overlay.Dockerfile \
+            --tag "${IMAGE_TAG}" \
+            --tag "${LATEST_TAG}" \
+            --push \
+            .
+          
+          echo "✅ Overlay image built and pushed: ${IMAGE_TAG}"
+          echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
       
-      - name: Upload overlay package to GitHub Release
-        if: ${{ !env.ACT && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: talos/output/*.tar.gz
-          tag_name: overlay-${{ steps.version.outputs.version }}
-          name: Talos Overlay Package ${{ steps.version.outputs.version }}
-          body: |
-            Talos Linux overlay package for ASUS Ascent GX10
-            
-            **Version:** ${{ steps.version.outputs.version }}
-            **Build Date:** ${{ github.event.head_commit.timestamp || github.run_started_at }}
-            **Commit:** ${{ github.sha }}
-            
-            ## Installation
-            
-            This overlay package contains:
-            - NVIDIA GPU kernel modules (6.11.0-1016-nvidia)
-            - NVIDIA GPU firmware blobs
-            - Hardware-specific configurations
-            
-            Use this package with Talos Image Factory to create custom Talos images.
-            
-            ## Usage
-            
-            ```bash
-            talosctl image factory \
-              --overlay ./asus-ascent-gx10-overlay-${{ steps.version.outputs.version }}.tar.gz \
-              --arch arm64 \
-              --platform metal
-            ```
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-      - name: Verify overlay package structure
-        if: ${{ !env.ACT }}
-        run: python3 talos/scripts/ci_verify_package.py
-      
-      - name: Extract overlay package
-        if: ${{ !env.ACT }}
-        run: python3 talos/scripts/ci_extract_package.py
-      
-      - name: Extract overlay package (ACT fallback)
+      - name: Build overlay as OCI image (ACT fallback)
         if: ${{ env.ACT }}
         run: |
-          # For ACT, assume package is already built locally
-          echo "⚠️  ACT mode: Skipping package extraction (assume already built)"
-          if [ ! -d "talos/asus-ascent-gx10-overlay" ]; then
-            echo "❌ Overlay directory not found. Build overlay first with: python3 talos/scripts/ci_build_overlay.py"
-            exit 1
-          fi
+          OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
+          IMAGE_TAG="local/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
+          
+          echo "📦 Building overlay as OCI image (local): ${IMAGE_TAG}"
+          
+          # Create temporary Dockerfile for overlay
+          cat > /tmp/overlay.Dockerfile <<EOF
+          FROM scratch
+          COPY ${OVERLAY_DIR} /overlay/
+          EOF
+          
+          # Build overlay image locally (no push)
+          docker build \
+            --file /tmp/overlay.Dockerfile \
+            --tag "${IMAGE_TAG}" \
+            .
+          
+          echo "✅ Overlay image built: ${IMAGE_TAG}"
+          echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
     
-      - name: Build Talos image with overlay
+      - name: Build Talos image with overlay using Docker buildx
+        id: build_image
+        if: ${{ !env.ACT }}
         env:
           ARCH: ${{ matrix.arch }}
           PLATFORM: ${{ matrix.platform }}
           TALOS_VERSION: ${{ env.TALOS_VERSION }}
+          OVERLAY_IMAGE: ${{ steps.build_overlay_image.outputs.overlay_image || steps.overlay_meta.outputs.tags || 'ghcr.io/microscaler/talos-overlay-asus-ascent-gx10:latest' }}
+          OVERLAY_NAME: asus-ascent-gx10-overlay
+        run: python3 talos/scripts/ci_build_talos_image.py
+      
+      - name: Build Talos image with overlay (ACT fallback)
+        if: ${{ env.ACT }}
+        env:
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          TALOS_VERSION: ${{ env.TALOS_VERSION }}
+          OVERLAY_IMAGE: local/talos-overlay-asus-ascent-gx10:latest
+          OVERLAY_NAME: asus-ascent-gx10-overlay
         run: python3 talos/scripts/ci_build_talos_image.py
     
       - name: Upload Talos image artifact
@@ -182,9 +180,10 @@ jobs:
           retention-days: 1  # Minimum retention (1 day) - releases keep forever
           compression-level: 0  # Images are already compressed
     
-      - name: Get overlay version from package
+      - name: Set overlay version
         id: overlay_version
-        run: python3 talos/scripts/ci_extract_version_from_package.py
+        run: |
+          echo "version=${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
     
       - name: Upload image to GitHub Release (permanent storage)
         if: ${{ !env.ACT && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
