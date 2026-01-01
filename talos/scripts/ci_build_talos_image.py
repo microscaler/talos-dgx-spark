@@ -286,16 +286,25 @@ def build_image(
                 print(f"     - {f.name}", file=sys.stderr)
             return 1
         
-        # If we found a .zst file, decompress it
+        # If we found a .zst file, decompress it directly to the expected output format
+        # Since .raw and .img are the same format, we can decompress directly to .img
         if found_image.suffix == ".zst":
             print(f"📦 Found compressed image: {found_image.name}")
-            print(f"   Decompressing to .raw format...")
             
-            # Decompress using zstd
-            raw_path = found_image.with_suffix("")  # Remove .zst extension
+            # Determine target path: if output expects .img, decompress to .img
+            # Otherwise decompress to .raw (remove .zst, keep .raw if present)
+            if output_path.suffix == ".img":
+                # Decompress directly to .img (skip .raw intermediate)
+                decompressed_path = output_path
+                print(f"   Decompressing directly to .img format...")
+            else:
+                # Decompress to .raw (remove .zst extension)
+                decompressed_path = found_image.with_suffix("")  # Remove .zst
+                print(f"   Decompressing to .raw format...")
+            
             try:
                 result = subprocess.run(
-                    ["zstd", "-d", "-f", "-o", str(raw_path), str(found_image)],
+                    ["zstd", "-d", "-f", "-o", str(decompressed_path), str(found_image)],
                     capture_output=True,
                     text=True,
                     timeout=300,  # 5 minute timeout for decompression
@@ -303,18 +312,18 @@ def build_image(
                 if result.returncode != 0:
                     print(f"❌ Failed to decompress image: {result.stderr}", file=sys.stderr)
                     return 1
-                print(f"✅ Decompressed to: {raw_path.name}")
-                found_image = raw_path
+                print(f"✅ Decompressed to: {decompressed_path.name}")
+                found_image = decompressed_path
             except FileNotFoundError:
                 # Try using Python zstandard if zstd command not available
                 if HAS_ZSTANDARD:
                     try:
                         with open(found_image, "rb") as compressed:
-                            with open(raw_path, "wb") as decompressed:
+                            with open(decompressed_path, "wb") as decompressed:
                                 dctx = zstd.ZstdDecompressor()
                                 dctx.copy_stream(compressed, decompressed)
-                        print(f"✅ Decompressed to: {raw_path.name} (using Python zstandard)")
-                        found_image = raw_path
+                        print(f"✅ Decompressed to: {decompressed_path.name} (using Python zstandard)")
+                        found_image = decompressed_path
                     except Exception as e:
                         print(f"❌ Failed to decompress with Python zstandard: {e}", file=sys.stderr)
                         return 1
@@ -323,8 +332,13 @@ def build_image(
                     print(f"   Please install zstd or python-zstandard", file=sys.stderr)
                     return 1
         
-        # If the found image is different from expected, rename it
-        if found_image != output_path:
+        # If the found image is different from expected, copy/rename it
+        # If it's a .raw file and we expect .img, just rename (same format)
+        if found_image.suffix == ".raw" and output_path.suffix == ".img":
+            # .raw and .img are the same format - just rename
+            print(f"📦 Renaming .raw to .img: {found_image.name} -> {output_path.name}")
+            found_image.rename(output_path)
+        elif found_image != output_path:
             print(f"📦 Found image: {found_image.name}, moving to {output_path.name}")
             found_image.rename(output_path)
         
