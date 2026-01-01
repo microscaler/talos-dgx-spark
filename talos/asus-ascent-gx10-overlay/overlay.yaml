@@ -1,4 +1,4 @@
-name: asus-ascent-gx10
+name: asus-ascent-gx10-overlay
 version: 1.0.0
 description: Talos overlay for ASUS Ascent GX10 with NVIDIA GPU support
 architectures:
