@@ -88,21 +88,23 @@ jobs:
       - name: Build overlay installer binary
         if: ${{ !env.ACT }}
         run: |
-          OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
+          # Use GitHub Actions workspace variable for absolute paths
+          WORKSPACE="${GITHUB_WORKSPACE}"
+          OVERLAY_DIR="${WORKSPACE}/talos/asus-ascent-gx10-overlay"
           INSTALLER_DIR="${OVERLAY_DIR}/installer"
           INSTALLERS_DIR="${OVERLAY_DIR}/installers"
           INSTALLER_BINARY="${INSTALLERS_DIR}/asus-ascent-gx10-overlay"
           
           echo "🔧 Building overlay installer binary..."
+          echo "   Workspace: ${WORKSPACE}"
+          echo "   Overlay dir: ${OVERLAY_DIR}"
+          echo "   Installer dir: ${INSTALLER_DIR}"
+          echo "   Output: ${INSTALLER_BINARY}"
           
           # Create installers directory
           mkdir -p "${INSTALLERS_DIR}"
           
           # Build installer binary
-          # Use absolute path for output to avoid path issues when changing directories
-          INSTALLER_BINARY_ABS="$(pwd)/${INSTALLER_BINARY}"
-          echo "   Absolute path: ${INSTALLER_BINARY_ABS}"
-          
           cd "${INSTALLER_DIR}"
           if [ -f "go.mod" ]; then
             # Verify Go version
@@ -120,10 +122,9 @@ jobs:
             # Verify go.sum exists (may be empty if no dependencies)
             echo "✅ Go module ready"
             
-            # Build installer binary (use absolute path from project root)
+            # Build installer binary (use absolute path)
             echo "🔨 Building installer binary for linux/arm64..."
-            echo "   Output: ${INSTALLER_BINARY_ABS}"
-            GOOS=linux GOARCH=arm64 go build -o "${INSTALLER_BINARY_ABS}" ./installer.go || {
+            GOOS=linux GOARCH=arm64 go build -o "${INSTALLER_BINARY}" ./installer.go || {
               echo "❌ Failed to build installer binary"
               echo "   Go version: $(go version)"
               exit 1
@@ -134,9 +135,9 @@ jobs:
             exit 1
           fi
           
-          # Return to project root and verify
-          cd "${GITHUB_WORKSPACE:-$(pwd)/..}"
-          echo "🔍 Verifying installer binary from project root..."
+          # Return to workspace and verify
+          cd "${WORKSPACE}"
+          echo "🔍 Verifying installer binary from workspace root..."
           echo "   Current directory: $(pwd)"
           echo "   Looking for: ${INSTALLER_BINARY}"
           if [ -f "${INSTALLER_BINARY}" ]; then
@@ -144,8 +145,8 @@ jobs:
             ls -lh "${INSTALLER_BINARY}"
           else
             echo "❌ Installer binary not found at ${INSTALLER_BINARY}"
-            echo "   Contents of ${OVERLAY_DIR}/installers/:"
-            ls -lah "${OVERLAY_DIR}/installers/" 2>/dev/null || echo "   Directory does not exist"
+            echo "   Contents of ${INSTALLERS_DIR}:"
+            ls -lah "${INSTALLERS_DIR}" 2>/dev/null || echo "   Directory does not exist"
             exit 1
           fi
     
@@ -153,12 +154,16 @@ jobs:
         if: ${{ !env.ACT }}
         id: build_overlay_image
         run: |
-          OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
+          # Use GitHub Actions workspace variable for absolute paths
+          WORKSPACE="${GITHUB_WORKSPACE}"
+          OVERLAY_DIR="${WORKSPACE}/talos/asus-ascent-gx10-overlay"
+          INSTALLER_BINARY="${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
           DOCKERHUB_TAG="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
           DOCKERHUB_LATEST="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
-          INSTALLER_BINARY="${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
           
           echo "📦 Building overlay as OCI image: ${DOCKERHUB_TAG}"
+          echo "   Workspace: ${WORKSPACE}"
+          echo "   Overlay dir: ${OVERLAY_DIR}"
           
           # Verify installer binary exists before building image
           echo "🔍 Verifying installer binary before building image..."
@@ -167,30 +172,24 @@ jobs:
           
           if [ ! -f "${INSTALLER_BINARY}" ]; then
             echo "❌ Installer binary not found at ${INSTALLER_BINARY}"
-            echo "   Absolute path check:"
-            INSTALLER_ABS="$(cd "${OVERLAY_DIR}" && pwd)/installers/asus-ascent-gx10-overlay"
-            if [ -f "${INSTALLER_ABS}" ]; then
-              echo "   ✅ Found at absolute path: ${INSTALLER_ABS}"
-              INSTALLER_BINARY="${INSTALLER_ABS}"
-            else
-              echo "   ❌ Not found at absolute path either: ${INSTALLER_ABS}"
-              echo "   Available files in installers directory:"
-              ls -lah "${OVERLAY_DIR}/installers/" 2>/dev/null || echo "   installers directory does not exist"
-              echo "   Contents of overlay directory:"
-              ls -lah "${OVERLAY_DIR}/" || echo "   Overlay directory does not exist"
-              exit 1
-            fi
+            echo "   Available files in installers directory:"
+            ls -lah "${OVERLAY_DIR}/installers/" 2>/dev/null || echo "   installers directory does not exist"
+            echo "   Contents of overlay directory:"
+            ls -lah "${OVERLAY_DIR}/" 2>/dev/null || echo "   Overlay directory does not exist"
+            exit 1
           fi
           echo "✅ Installer binary verified: ${INSTALLER_BINARY}"
           ls -lh "${INSTALLER_BINARY}"
           
           # Create temporary Dockerfile for overlay
+          # Use relative path from workspace for COPY
           cat > /tmp/overlay.Dockerfile <<EOF
           FROM scratch
-          COPY ${OVERLAY_DIR} /overlay/
+          COPY talos/asus-ascent-gx10-overlay /overlay/
           EOF
           
-          # Build overlay image locally
+          # Build overlay image locally (from workspace root)
+          cd "${WORKSPACE}"
           docker build \
             --file /tmp/overlay.Dockerfile \
             --tag "${DOCKERHUB_TAG}" \
