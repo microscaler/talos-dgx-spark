@@ -195,6 +195,27 @@ jobs:
         run: |
           echo "version=${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
     
+      - name: Push overlay image to GHCR
+        if: ${{ !env.ACT && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+        run: |
+          OVERLAY_IMAGE="${{ steps.build_overlay_image.outputs.overlay_image || 'talos-overlay-asus-ascent-gx10:1.0.0' }}"
+          REGISTRY_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
+          LATEST_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
+          
+          echo "📤 Pushing overlay image to GHCR: ${REGISTRY_TAG}"
+          
+          # Tag for registry
+          docker tag "${OVERLAY_IMAGE}" "${REGISTRY_TAG}"
+          docker tag "${OVERLAY_IMAGE}" "${LATEST_TAG}"
+          
+          # Push to registry
+          docker push "${REGISTRY_TAG}"
+          docker push "${LATEST_TAG}"
+          
+          echo "✅ Overlay image pushed to GHCR"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
       - name: Upload image to GitHub Release (permanent storage)
         if: ${{ !env.ACT && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
         uses: softprops/action-gh-release@v2
