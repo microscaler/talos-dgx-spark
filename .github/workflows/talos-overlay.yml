@@ -131,8 +131,19 @@ jobs:
           OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
           DOCKERHUB_TAG="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
           DOCKERHUB_LATEST="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
+          INSTALLER_BINARY="${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
           
           echo "📦 Building overlay as OCI image: ${DOCKERHUB_TAG}"
+          
+          # Verify installer binary exists before building image
+          if [ ! -f "${INSTALLER_BINARY}" ]; then
+            echo "❌ Installer binary not found at ${INSTALLER_BINARY}"
+            echo "   Available files in installers directory:"
+            ls -lah "${OVERLAY_DIR}/installers/" 2>/dev/null || echo "   installers directory does not exist"
+            exit 1
+          fi
+          echo "✅ Installer binary verified: ${INSTALLER_BINARY}"
+          ls -lh "${INSTALLER_BINARY}"
           
           # Create temporary Dockerfile for overlay
           cat > /tmp/overlay.Dockerfile <<EOF
