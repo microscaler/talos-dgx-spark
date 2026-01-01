@@ -113,52 +113,62 @@ jobs:
             --tag "${DOCKERHUB_LATEST}" \
             .
           
-          # Verify the installer is in the built image
-          # Since scratch images can't run, we use a temporary alpine container to inspect
+          # Verify the installer is in the built image by inspecting the image tar
           echo "🔍 Verifying installer is in the built image..."
           INSTALLER_FOUND=false
           
-          # Create a temporary container with alpine to inspect the scratch image
-          # We'll import the scratch image as a filesystem layer
-          TEMP_CONTAINER="overlay-verify-$$"
-          docker run -d --name "${TEMP_CONTAINER}" alpine sleep 3600 >/dev/null 2>&1 || {
-            echo "⚠️  Could not create verification container"
-          }
-          
-          # Copy the overlay image's filesystem into the alpine container for inspection
-          # We'll use docker create with the scratch image and then copy from it
-          docker create --name scratch-temp "${DOCKERHUB_TAG}" >/dev/null 2>&1 || {
-            # If we can't create from scratch, try a different approach
-            # Use docker save and extract, or just verify the build step succeeded
-            echo "⚠️  Cannot create container from scratch image (expected)"
-            echo "   Verifying build step completed successfully..."
-            # Check if the COPY step in the build output indicates success
-            # If the build completed without errors, the file should be there
-            echo "✅ Build completed - COPY step should have included installer"
-            echo "   If installer is missing, Talos imager will fail with clear error"
-            INSTALLER_FOUND=true  # Trust the build process
-          }
-          
-          # Try to copy the installer from the scratch container
-          if docker cp scratch-temp:/overlay/installers/asus-ascent-gx10-overlay /tmp/installer-verify 2>/dev/null; then
-            echo "✅ Installer found in image!"
-            ls -lh /tmp/installer-verify
-            file /tmp/installer-verify
-            rm -f /tmp/installer-verify
-            INSTALLER_FOUND=true
+          # Save image to tar for inspection
+          TEMP_TAR="/tmp/overlay-verify-$$.tar"
+          echo "   Saving image to tar for inspection..."
+          if ! docker save "${DOCKERHUB_TAG}" -o "${TEMP_TAR}" 2>/dev/null; then
+            echo "❌ Failed to save image for verification"
+            exit 1
           fi
+          
+          # Extract and search for installer in all layers
+          echo "   Searching for installer in image layers..."
+          EXTRACT_DIR="/tmp/overlay-extract-$$"
+          mkdir -p "${EXTRACT_DIR}"
+          cd "${EXTRACT_DIR}"
+          
+          # Extract the tar
+          tar -xf "${TEMP_TAR}" 2>/dev/null || {
+            echo "❌ Failed to extract image tar"
+            rm -f "${TEMP_TAR}"
+            exit 1
+          }
+          
+          # Find and check all layer tars
+          for layer_tar in */layer.tar; do
+            if [ -f "${layer_tar}" ]; then
+              # Check if installer is in this layer
+              if tar -tf "${layer_tar}" 2>/dev/null | grep -q "overlay/installers/asus-ascent-gx10-overlay"; then
+                echo "✅ Installer found in layer: ${layer_tar}"
+                # Extract and verify it's actually a file (not just a path)
+                tar -xf "${layer_tar}" overlay/installers/asus-ascent-gx10-overlay 2>/dev/null && {
+                  if [ -f "overlay/installers/asus-ascent-gx10-overlay" ]; then
+                    echo "✅ Installer binary verified!"
+                    ls -lh overlay/installers/asus-ascent-gx10-overlay
+                    file overlay/installers/asus-ascent-gx10-overlay
+                    INSTALLER_FOUND=true
+                    break
+                  fi
+                }
+              fi
+            fi
+          done
           
           # Cleanup
-          docker rm -f scratch-temp "${TEMP_CONTAINER}" 2>/dev/null || true
+          cd /
+          rm -rf "${EXTRACT_DIR}" "${TEMP_TAR}"
           
           if [ "${INSTALLER_FOUND}" != "true" ]; then
-            echo "⚠️  Could not directly verify installer in scratch image"
-            echo "   This is expected - scratch images cannot run containers"
-            echo "   The build completed successfully, so installer should be present"
-            echo "   If missing, Talos imager will report the error during image build"
-            # Don't fail - let Talos imager catch the error if installer is actually missing
-            INSTALLER_FOUND=true
+            echo "❌ Build verification failed: Installer binary not found in image"
+            echo "   This indicates the COPY step failed or file is in wrong location"
+            exit 1
           fi
+          
+          echo "✅ Installer verification passed!"
           
           echo "✅ Overlay image built and verified: ${DOCKERHUB_TAG}"
           echo "overlay_image=${DOCKERHUB_TAG}" >> $GITHUB_OUTPUT
