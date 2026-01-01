@@ -4,7 +4,7 @@ ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
 # Stage 1: Build installer binary
-FROM --platform=${TARGETPLATFORM} golang:1.22.7-alpine AS builder
+FROM golang:1.22.7-alpine AS builder
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 WORKDIR /build
