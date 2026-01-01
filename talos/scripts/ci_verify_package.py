@@ -157,15 +157,29 @@ def main() -> int:
             output_dir = current_dir / "talos" / "output"
             output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Find package
+        # Find package - check both direct and subdirectories (artifact downloads create subdirs)
         packages = list(output_dir.glob("*.tar.gz"))
         if not packages:
+            # Also search in subdirectories (artifact downloads may create subdirs)
+            packages = list(output_dir.rglob("*.tar.gz"))
+        
+        if not packages:
             print(f"❌ No packages found in {output_dir}", file=sys.stderr)
-            print(f"   Searched in: {output_dir}", file=sys.stderr)
+            print(f"   Searched in: {output_dir} (including subdirectories)", file=sys.stderr)
             if output_dir.exists():
                 print(f"   Directory exists but is empty or contains:", file=sys.stderr)
-                for item in output_dir.iterdir():
-                    print(f"     - {item.name} ({'dir' if item.is_dir() else 'file'})", file=sys.stderr)
+                for item in sorted(output_dir.iterdir()):
+                    item_type = "dir" if item.is_dir() else "file"
+                    if item.is_dir():
+                        # Check what's inside subdirectories
+                        sub_items = list(item.iterdir())
+                        print(f"     - {item.name}/ ({item_type}, {len(sub_items)} items)", file=sys.stderr)
+                        for sub_item in sorted(sub_items)[:5]:  # Show first 5 items
+                            print(f"       - {sub_item.name}", file=sys.stderr)
+                        if len(sub_items) > 5:
+                            print(f"       ... and {len(sub_items) - 5} more", file=sys.stderr)
+                    else:
+                        print(f"     - {item.name} ({item_type})", file=sys.stderr)
             return 1
         
         package_path = packages[0]

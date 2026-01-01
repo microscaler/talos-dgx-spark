@@ -291,7 +291,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          lfs: true
+          lfs: false  # Only need Python scripts, not LFS files
     
       - name: Download overlay package artifact
         if: ${{ !env.ACT }}
