@@ -33,16 +33,20 @@ env:
   OVERLAY_NAME: asus-ascent-gx10
 
 jobs:
-  build-overlay:
-    name: Build Talos Overlay Package
+  build-overlay-and-image:
+    name: Build Talos Overlay and Image
     runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.build_image != 'false' && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
     env:
       BRRTR_LOCAL: "1"  # Indicates local development mode
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     permissions:
       contents: write  # Required for creating releases
       packages: write
+    
+    strategy:
+      matrix:
+        arch: [arm64]  # ASUS Ascent GX10 is ARM64
+        platform: [metal]  # Can add: aws, azure, gcp, etc.
     
     steps:
       - name: Checkout code
@@ -144,76 +148,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
-      - name: Extract metadata
-        if: ${{ !env.ACT }}
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=sha,prefix={{branch}}-
-            type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
-
-  build-talos-image:
-    name: Build Talos Image with Overlay
-    runs-on: ubuntu-latest
-    needs: build-overlay
-    if: ${{ github.event.inputs.build_image != 'false' && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
-    env:
-      BRRTR_LOCAL: "1"  # Indicates local development mode
-    permissions:
-      contents: read
-      packages: write
-    
-    strategy:
-      matrix:
-        arch: [arm64]  # ASUS Ascent GX10 is ARM64
-        platform: [metal]  # Can add: aws, azure, gcp, etc.
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          lfs: false  # Only need Python scripts, overlay comes from artifact
-      
-      - name: Set up Docker Buildx
-        if: ${{ !env.ACT }}
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Set up QEMU (for ARM64 emulation)
-        if: ${{ !env.ACT }}
-        uses: docker/setup-qemu-action@v3
-      
-      - name: Download overlay package artifact
-        if: ${{ !env.ACT }}
-        uses: actions/download-artifact@v4
-        with:
-          pattern: talos-overlay-package-*
-          path: talos/output/
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          merge-multiple: false
-      
-      - name: Flatten artifact structure
-        if: ${{ !env.ACT }}
-        run: |
-          # Artifacts are downloaded into subdirectories, move files to output root
-          echo "📦 Flattening artifact structure..."
-          if [ -d "talos/output/talos-overlay-package-"* ]; then
-            find talos/output/talos-overlay-package-* -name "*.tar.gz" -exec mv {} talos/output/ \;
-            # Remove empty subdirectories
-            find talos/output -type d -name "talos-overlay-package-*" -empty -delete
-            echo "✅ Artifacts flattened"
-          else
-            echo "⚠️  No artifact subdirectory found"
-          fi
-    
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-    
       - name: Verify overlay package structure
         if: ${{ !env.ACT }}
         run: python3 talos/scripts/ci_verify_package.py
@@ -232,11 +166,6 @@ jobs:
             exit 1
           fi
     
-      - name: Install talosctl
-        env:
-          TALOS_VERSION: ${{ env.TALOS_VERSION }}
-        run: python3 talos/scripts/ci_install_talosctl.py
-    
       - name: Build Talos image with overlay
         env:
           ARCH: ${{ matrix.arch }}
@@ -252,14 +181,6 @@ jobs:
           path: talos/output/talos-*.img
           retention-days: 1  # Minimum retention (1 day) - releases keep forever
           compression-level: 0  # Images are already compressed
-    
-      - name: Log in to GitHub Container Registry
-        if: ${{ !env.ACT }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
     
       - name: Get overlay version from package
         id: overlay_version
