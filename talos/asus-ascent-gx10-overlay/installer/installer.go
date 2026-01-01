@@ -6,8 +6,8 @@
 // - Configuring boot parameters
 // - Setting up module loading
 //
-// The installer is called by Talos imager with the overlay path as the first argument
-// and the rootfs path as the second argument.
+// The installer is called by Talos imager with "install" as the first argument
+// and YAML InstallOptions passed via stdin.
 package main
 
 import (
@@ -15,20 +15,92 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"go.yaml.in/yaml/v4"
 )
 
+// InstallOptions matches the structure from Talos overlay package
+type InstallOptions struct {
+	InstallDisk   string                 `yaml:"installDisk"`
+	MountPrefix   string                 `yaml:"mountPrefix"`
+	ArtifactsPath string                 `yaml:"artifactsPath"`
+	ExtraOptions  map[string]interface{} `yaml:"extraOptions,omitempty"`
+}
+
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <overlay-path> <rootfs-path>\n", os.Args[0])
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <command>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Commands: install\n")
 		os.Exit(1)
 	}
 
-	overlayPath := os.Args[1]
-	rootfsPath := os.Args[2]
+	command := os.Args[1]
+
+	switch command {
+	case "install":
+		if err := install(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "get-options":
+		// Return empty options for now (can be extended later)
+		options := map[string]interface{}{
+			"name":       "asus-ascent-gx10-overlay",
+			"kernelArgs": []string{},
+		}
+		if err := yaml.NewEncoder(os.Stdout).Encode(options); err != nil {
+			fmt.Fprintf(os.Stderr, "Error encoding options: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
+		os.Exit(1)
+	}
+}
+
+func install() error {
+	// Read YAML InstallOptions from stdin
+	var options InstallOptions
+	if err := yaml.NewDecoder(os.Stdin).Decode(&options); err != nil {
+		return fmt.Errorf("failed to decode install options: %w", err)
+	}
+
+	// MountPrefix is the rootfs path
+	rootfsPath := options.MountPrefix
+
+	// Overlay path is the directory containing the installer's parent directory
+	// The installer is at: /tmp/imager.../overlay/installers/asus-ascent-gx10-overlay
+	// So overlay is at: /tmp/imager.../overlay/
+	executablePath, err := os.Executable()
+	if err != nil {
+		// Fallback: try to get from /proc/self/exe or use a default
+		executablePath = os.Args[0]
+	}
+	// Get the directory containing installers/ (which is the overlay directory)
+	installersDir := filepath.Dir(executablePath)
+	overlayPath := filepath.Dir(installersDir)
 
 	fmt.Printf("Installing ASUS Ascent GX10 overlay...\n")
 	fmt.Printf("  Overlay path: %s\n", overlayPath)
 	fmt.Printf("  Rootfs path: %s\n", rootfsPath)
+
+	// Install kernel modules
+	if err := installKernelModules(overlayPath, rootfsPath); err != nil {
+		return fmt.Errorf("failed to install kernel modules: %w", err)
+	}
+
+	// Install firmware
+	if err := installFirmware(overlayPath, rootfsPath); err != nil {
+		return fmt.Errorf("failed to install firmware: %w", err)
+	}
+
+	// Install configuration files
+	if err := installConfigFiles(overlayPath, rootfsPath); err != nil {
+		return fmt.Errorf("failed to install config files: %w", err)
+	}
+
+	fmt.Printf("✅ Overlay installation completed successfully\n")
+	return nil
 
 	// Install kernel modules
 	if err := installKernelModules(overlayPath, rootfsPath); err != nil {
