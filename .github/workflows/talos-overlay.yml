@@ -155,6 +155,20 @@ jobs:
           echo "✅ Overlay image built: ${IMAGE_TAG}"
           echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
     
+      - name: Verify overlay image exists locally
+        if: ${{ !env.ACT }}
+        run: |
+          OVERLAY_IMAGE="${{ steps.build_overlay_image.outputs.overlay_image || 'local/talos-overlay-asus-ascent-gx10:1.0.0' }}"
+          echo "🔍 Verifying overlay image exists: ${OVERLAY_IMAGE}"
+          if ! docker image inspect "${OVERLAY_IMAGE}" >/dev/null 2>&1; then
+            echo "❌ Overlay image not found locally: ${OVERLAY_IMAGE}"
+            echo "Available images:"
+            docker images | grep talos-overlay || echo "No talos-overlay images found"
+            exit 1
+          fi
+          echo "✅ Overlay image found locally"
+          docker image inspect "${OVERLAY_IMAGE}" --format '{{.Id}}'
+      
       - name: Build Talos image with overlay using Docker buildx
         id: build_image
         if: ${{ !env.ACT }}
