@@ -99,6 +99,10 @@ jobs:
           mkdir -p "${INSTALLERS_DIR}"
           
           # Build installer binary
+          # Use absolute path for output to avoid path issues when changing directories
+          INSTALLER_BINARY_ABS="$(pwd)/${INSTALLER_BINARY}"
+          echo "   Absolute path: ${INSTALLER_BINARY_ABS}"
+          
           cd "${INSTALLER_DIR}"
           if [ -f "go.mod" ]; then
             # Verify Go version
@@ -116,8 +120,7 @@ jobs:
             # Verify go.sum exists (may be empty if no dependencies)
             echo "✅ Go module ready"
             
-            # Build installer binary (use absolute path to ensure it's in the right place)
-            INSTALLER_BINARY_ABS="$(cd "${OVERLAY_DIR}" && pwd)/installers/asus-ascent-gx10-overlay"
+            # Build installer binary (use absolute path from project root)
             echo "🔨 Building installer binary for linux/arm64..."
             echo "   Output: ${INSTALLER_BINARY_ABS}"
             GOOS=linux GOARCH=arm64 go build -o "${INSTALLER_BINARY_ABS}" ./installer.go || {
@@ -126,32 +129,23 @@ jobs:
               exit 1
             }
             echo "✅ Installer binary built successfully"
-            
-            # Verify it exists
-            if [ ! -f "${INSTALLER_BINARY_ABS}" ]; then
-              echo "❌ Installer binary not found at ${INSTALLER_BINARY_ABS}"
-              exit 1
-            fi
-            echo "✅ Verified installer binary exists: ${INSTALLER_BINARY_ABS}"
-            ls -lh "${INSTALLER_BINARY_ABS}"
           else
             echo "❌ go.mod not found in ${INSTALLER_DIR}"
             exit 1
           fi
           
-          # Return to project root
-          cd "${GITHUB_WORKSPACE:-.}"
-          
-          # Final verification from project root
-          echo "🔍 Final verification from project root..."
-          if [ -f "${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay" ]; then
-            echo "✅ Installer binary ready: ${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
-            ls -lh "${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
+          # Return to project root and verify
+          cd "${GITHUB_WORKSPACE:-$(pwd)/..}"
+          echo "🔍 Verifying installer binary from project root..."
+          echo "   Current directory: $(pwd)"
+          echo "   Looking for: ${INSTALLER_BINARY}"
+          if [ -f "${INSTALLER_BINARY}" ]; then
+            echo "✅ Installer binary ready: ${INSTALLER_BINARY}"
+            ls -lh "${INSTALLER_BINARY}"
           else
-            echo "❌ Installer binary not found at ${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
-            echo "   Current directory: $(pwd)"
+            echo "❌ Installer binary not found at ${INSTALLER_BINARY}"
             echo "   Contents of ${OVERLAY_DIR}/installers/:"
-            ls -lah "${OVERLAY_DIR}/installers/" || echo "   Directory does not exist"
+            ls -lah "${OVERLAY_DIR}/installers/" 2>/dev/null || echo "   Directory does not exist"
             exit 1
           fi
     
