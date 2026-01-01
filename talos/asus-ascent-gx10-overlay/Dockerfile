@@ -26,5 +26,6 @@ COPY files/ /overlay/files/
 COPY overlay.yaml /overlay/overlay.yaml
 # Copy installer binary last - this ensures it's in the final layer
 # The installer must be at /overlay/installers/{overlay-name} for the imager to find it
-COPY --from=builder /build/installer/asus-ascent-gx10-overlay /overlay/installers/asus-ascent-gx10-overlay
+# Use --chmod=755 to explicitly ensure executable permissions are set
+COPY --from=builder --chmod=755 /build/installer/asus-ascent-gx10-overlay /overlay/installers/asus-ascent-gx10-overlay
 
