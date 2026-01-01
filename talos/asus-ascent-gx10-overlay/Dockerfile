@@ -19,13 +19,15 @@ RUN GOOS=$(echo ${TARGETPLATFORM} | cut -d'/' -f1) && \
 
 # Stage 2: Create overlay image
 FROM scratch
-# Copy all overlay files first
+# Copy all overlay files at ROOT level (not under /overlay/)
+# The imager extracts to tempDir/overlay/, so files at root become tempDir/overlay/...
 # This ensures the imager can find all files when extracting the overlay
-COPY install/ /overlay/install/
-COPY files/ /overlay/files/
-COPY overlay.yaml /overlay/overlay.yaml
+COPY install/ /install/
+COPY files/ /files/
+COPY overlay.yaml /overlay.yaml
 # Copy installer binary last - this ensures it's in the final layer
-# The installer must be at /overlay/installers/{overlay-name} for the imager to find it
+# The installer must be at /installers/{overlay-name} in the image
+# When extracted to tempDir/overlay/, it becomes tempDir/overlay/installers/{overlay-name}
 # Use --chmod=755 to explicitly ensure executable permissions are set
-COPY --from=builder --chmod=755 /build/installer/asus-ascent-gx10-overlay /overlay/installers/asus-ascent-gx10-overlay
+COPY --from=builder --chmod=755 /build/installer/asus-ascent-gx10-overlay /installers/asus-ascent-gx10-overlay
 
