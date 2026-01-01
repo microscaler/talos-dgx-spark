@@ -52,6 +52,7 @@ ENV/
 # Go build artifacts (for Talos installer)
 talos/asus-ascent-gx10-overlay/installer/bin/
 talos/asus-ascent-gx10-overlay/installer/vendor/
+talos/asus-ascent-gx10-overlay/installers/
 
 # Extracted packages (source .deb files, not needed in repo)
 extracted/

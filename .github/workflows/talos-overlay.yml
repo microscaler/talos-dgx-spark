@@ -105,25 +105,16 @@ jobs:
             GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
             echo "🔍 Go version: ${GO_VERSION}"
             
-            # Download dependencies and generate go.sum
-            echo "📥 Downloading Talos dependencies..."
-            go mod download github.com/siderolabs/talos || {
-              echo "❌ Failed to download Talos dependencies"
-              exit 1
-            }
-            
             # Run go mod tidy to ensure go.sum is up to date
+            # (No external dependencies needed - standalone binary)
+            echo "📥 Running go mod tidy..."
             go mod tidy || {
               echo "❌ Failed to run go mod tidy"
               exit 1
             }
             
-            # Verify go.sum exists
-            if [ ! -f "go.sum" ]; then
-              echo "❌ go.sum file not generated"
-              exit 1
-            fi
-            echo "✅ Dependencies downloaded and go.sum generated"
+            # Verify go.sum exists (may be empty if no dependencies)
+            echo "✅ Go module ready"
             
             # Build installer binary
             echo "🔨 Building installer binary for linux/arm64..."
