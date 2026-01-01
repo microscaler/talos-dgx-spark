@@ -197,8 +197,13 @@ def build_image(
     # Mount Docker socket so imager can access local overlay image from host
     # Use profile name (e.g., "metal") as first arg and --output-kind image to build disk image
     # (not "installer" which builds container image)
+    # 
+    # Note: Creating disk images requires loopback device access, so we need:
+    # - --privileged flag to allow loopback device creation
+    # - Or mount /dev if available (but privileged is more reliable)
     cmd = [
         "docker", "run", "--rm", "-t",
+        "--privileged",  # Required for loopback device access to create disk images
         "--platform", f"linux/{arch}",
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
         "-v", f"{output_dir_abs}:/out",
