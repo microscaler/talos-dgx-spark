@@ -116,22 +116,44 @@ jobs:
             # Verify go.sum exists (may be empty if no dependencies)
             echo "✅ Go module ready"
             
-            # Build installer binary
+            # Build installer binary (use absolute path to ensure it's in the right place)
+            INSTALLER_BINARY_ABS="$(cd "${OVERLAY_DIR}" && pwd)/installers/asus-ascent-gx10-overlay"
             echo "🔨 Building installer binary for linux/arm64..."
-            GOOS=linux GOARCH=arm64 go build -o "${INSTALLER_BINARY}" ./installer.go || {
+            echo "   Output: ${INSTALLER_BINARY_ABS}"
+            GOOS=linux GOARCH=arm64 go build -o "${INSTALLER_BINARY_ABS}" ./installer.go || {
               echo "❌ Failed to build installer binary"
               echo "   Go version: $(go version)"
-              echo "   Talos requires Go >= 1.22.7"
               exit 1
             }
             echo "✅ Installer binary built successfully"
+            
+            # Verify it exists
+            if [ ! -f "${INSTALLER_BINARY_ABS}" ]; then
+              echo "❌ Installer binary not found at ${INSTALLER_BINARY_ABS}"
+              exit 1
+            fi
+            echo "✅ Verified installer binary exists: ${INSTALLER_BINARY_ABS}"
+            ls -lh "${INSTALLER_BINARY_ABS}"
           else
             echo "❌ go.mod not found in ${INSTALLER_DIR}"
             exit 1
           fi
           
-          echo "✅ Installer binary ready: ${INSTALLER_BINARY}"
-          ls -lh "${INSTALLER_BINARY}" || echo "⚠️  Installer binary not found"
+          # Return to project root
+          cd "${GITHUB_WORKSPACE:-.}"
+          
+          # Final verification from project root
+          echo "🔍 Final verification from project root..."
+          if [ -f "${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay" ]; then
+            echo "✅ Installer binary ready: ${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
+            ls -lh "${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
+          else
+            echo "❌ Installer binary not found at ${OVERLAY_DIR}/installers/asus-ascent-gx10-overlay"
+            echo "   Current directory: $(pwd)"
+            echo "   Contents of ${OVERLAY_DIR}/installers/:"
+            ls -lah "${OVERLAY_DIR}/installers/" || echo "   Directory does not exist"
+            exit 1
+          fi
     
       - name: Build overlay as OCI image
         if: ${{ !env.ACT }}
@@ -145,11 +167,25 @@ jobs:
           echo "📦 Building overlay as OCI image: ${DOCKERHUB_TAG}"
           
           # Verify installer binary exists before building image
+          echo "🔍 Verifying installer binary before building image..."
+          echo "   Looking for: ${INSTALLER_BINARY}"
+          echo "   Current directory: $(pwd)"
+          
           if [ ! -f "${INSTALLER_BINARY}" ]; then
             echo "❌ Installer binary not found at ${INSTALLER_BINARY}"
-            echo "   Available files in installers directory:"
-            ls -lah "${OVERLAY_DIR}/installers/" 2>/dev/null || echo "   installers directory does not exist"
-            exit 1
+            echo "   Absolute path check:"
+            INSTALLER_ABS="$(cd "${OVERLAY_DIR}" && pwd)/installers/asus-ascent-gx10-overlay"
+            if [ -f "${INSTALLER_ABS}" ]; then
+              echo "   ✅ Found at absolute path: ${INSTALLER_ABS}"
+              INSTALLER_BINARY="${INSTALLER_ABS}"
+            else
+              echo "   ❌ Not found at absolute path either: ${INSTALLER_ABS}"
+              echo "   Available files in installers directory:"
+              ls -lah "${OVERLAY_DIR}/installers/" 2>/dev/null || echo "   installers directory does not exist"
+              echo "   Contents of overlay directory:"
+              ls -lah "${OVERLAY_DIR}/" || echo "   Overlay directory does not exist"
+              exit 1
+            fi
           fi
           echo "✅ Installer binary verified: ${INSTALLER_BINARY}"
           ls -lh "${INSTALLER_BINARY}"
