@@ -302,6 +302,20 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           merge-multiple: false
       
+      - name: Flatten artifact structure
+        if: ${{ !env.ACT }}
+        run: |
+          # Artifacts are downloaded into subdirectories, move files to output root
+          echo "📦 Flattening artifact structure..."
+          if [ -d "talos/output/talos-overlay-package-"* ]; then
+            find talos/output/talos-overlay-package-* -name "*.tar.gz" -exec mv {} talos/output/ \;
+            # Remove empty subdirectories
+            find talos/output -type d -name "talos-overlay-package-*" -empty -delete
+            echo "✅ Artifacts flattened"
+          else
+            echo "⚠️  No artifact subdirectory found"
+          fi
+      
       - name: Verify overlay package exists (ACT fallback)
         if: ${{ env.ACT }}
         run: |
