@@ -198,14 +198,17 @@ def build_image(
     # Use profile name (e.g., "metal") as first arg and --output-kind image to build disk image
     # (not "installer" which builds container image)
     # 
-    # Note: Creating disk images requires loopback device access, so we need:
+    # Note: Creating disk images requires loopback device access and partition device nodes:
     # - --privileged flag to allow loopback device creation
-    # - Or mount /dev if available (but privileged is more reliable)
+    # - Mount /dev to ensure partition device nodes (loop0p1, etc.) are available
+    #   This is required because partition device nodes are created by the kernel when
+    #   partitions are detected, and they need to be accessible in the container
     cmd = [
         "docker", "run", "--rm", "-t",
         "--privileged",  # Required for loopback device access to create disk images
         "--platform", f"linux/{arch}",
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
+        "-v", "/dev:/dev",  # Mount /dev to access partition device nodes (loop0p1, etc.)
         "-v", f"{output_dir_abs}:/out",
         imager_image,
         platform,  # Profile name (e.g., "metal")
