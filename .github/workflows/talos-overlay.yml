@@ -157,17 +157,18 @@ jobs:
           
           # Check if installer is in the last layer
           # Use tar -tv to get file type info, then grep for the exact file path (not a directory)
-          if tar -tvf "${LAST_LAYER}" 2>/dev/null | grep -E "^[-]" | grep -q "overlay/installers/asus-ascent-gx10-overlay$"; then
+          # Note: Files are now at root level (installers/...) not under overlay/installers/...
+          if tar -tvf "${LAST_LAYER}" 2>/dev/null | grep -E "^[-]" | grep -q "installers/asus-ascent-gx10-overlay$"; then
             echo "✅ Installer path found in layer (verified as file, not directory)!"
             # Extract and verify it's actually a file
-            if tar -xf "${LAST_LAYER}" overlay/installers/asus-ascent-gx10-overlay 2>/dev/null; then
-              if [ -f "overlay/installers/asus-ascent-gx10-overlay" ]; then
+            if tar -xf "${LAST_LAYER}" installers/asus-ascent-gx10-overlay 2>/dev/null; then
+              if [ -f "installers/asus-ascent-gx10-overlay" ]; then
                 echo "✅ Installer binary verified!"
                 # Display file info for verification
-                ls -lh overlay/installers/asus-ascent-gx10-overlay
-                file overlay/installers/asus-ascent-gx10-overlay
+                ls -lh installers/asus-ascent-gx10-overlay
+                file installers/asus-ascent-gx10-overlay
                 # Verify it's executable
-                if [ -x "overlay/installers/asus-ascent-gx10-overlay" ]; then
+                if [ -x "installers/asus-ascent-gx10-overlay" ]; then
                   echo "✅ Installer is executable"
                 else
                   echo "⚠️  Warning: Installer is not executable"
@@ -176,8 +177,8 @@ jobs:
               else
                 echo "❌ Installer path exists but file extraction failed - file not found after extraction"
                 echo "   Current directory: $(pwd)"
-                echo "   Files in overlay/installers/:"
-                ls -lah overlay/installers/ 2>/dev/null || echo "   Directory does not exist"
+                echo "   Files in installers/:"
+                ls -lah installers/ 2>/dev/null || echo "   Directory does not exist"
               fi
             else
               echo "❌ Failed to extract installer from layer"
@@ -186,7 +187,7 @@ jobs:
           else
             echo "❌ Installer path not found in last layer (or found as directory, not file)"
             echo "   Contents of last layer:"
-            tar -tvf "${LAST_LAYER}" 2>/dev/null | grep -E "^[-].*overlay" | head -20 || echo "   No overlay files found"
+            tar -tvf "${LAST_LAYER}" 2>/dev/null | grep -E "^[-].*installers" | head -20 || echo "   No installers directory found"
           fi
           
           # Cleanup
