@@ -62,14 +62,6 @@ jobs:
         if: ${{ !env.ACT }}
         uses: docker/setup-qemu-action@v3
     
-      - name: Log in to GitHub Container Registry
-        if: ${{ !env.ACT }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-    
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -87,26 +79,15 @@ jobs:
       - name: Verify overlay components
         run: python3 talos/scripts/ci_verify_components.py
     
-      - name: Extract metadata for overlay image
-        if: ${{ !env.ACT }}
-        id: overlay_meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=sha,prefix={{branch}}-
-            type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
-    
       - name: Build overlay as OCI image
         if: ${{ !env.ACT }}
         id: build_overlay_image
         run: |
           OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
-          IMAGE_TAG="talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
+          DOCKERHUB_TAG="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
+          DOCKERHUB_LATEST="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
           
-          echo "📦 Building overlay as OCI image: ${IMAGE_TAG}"
+          echo "📦 Building overlay as OCI image: ${DOCKERHUB_TAG}"
           
           # Create temporary Dockerfile for overlay
           cat > /tmp/overlay.Dockerfile <<EOF
@@ -114,20 +95,39 @@ jobs:
           COPY ${OVERLAY_DIR} /overlay/
           EOF
           
-          # Build overlay image locally (no registry prefix, no push)
+          # Build overlay image locally
           docker build \
             --file /tmp/overlay.Dockerfile \
-            --tag "${IMAGE_TAG}" \
+            --tag "${DOCKERHUB_TAG}" \
+            --tag "${DOCKERHUB_LATEST}" \
             .
           
-          echo "✅ Overlay image built locally: ${IMAGE_TAG}"
-          echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "✅ Overlay image built locally: ${DOCKERHUB_TAG}"
+          echo "overlay_image=${DOCKERHUB_TAG}" >> $GITHUB_OUTPUT
+      
+      - name: Log in to Docker Hub
+        if: ${{ !env.ACT }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_SECRET }}
+      
+      - name: Push overlay image to Docker Hub
+        if: ${{ !env.ACT }}
+        run: |
+          OVERLAY_IMAGE="${{ steps.build_overlay_image.outputs.overlay_image }}"
+          DOCKERHUB_LATEST="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
+          
+          echo "📤 Pushing overlay image to Docker Hub: ${OVERLAY_IMAGE}"
+          docker push "${OVERLAY_IMAGE}"
+          docker push "${DOCKERHUB_LATEST}"
+          echo "✅ Overlay image pushed to Docker Hub"
       
       - name: Build overlay as OCI image (ACT fallback)
         if: ${{ env.ACT }}
         run: |
           OVERLAY_DIR="talos/asus-ascent-gx10-overlay"
-          IMAGE_TAG="talos-overlay-${{ env.OVERLAY_NAME }}:1.0.0"
+          IMAGE_TAG="docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:1.0.0"
           
           echo "📦 Building overlay as OCI image (local): ${IMAGE_TAG}"
           
@@ -137,7 +137,7 @@ jobs:
           COPY ${OVERLAY_DIR} /overlay/
           EOF
           
-          # Build overlay image locally (no push)
+          # Build overlay image locally (no push for ACT)
           docker build \
             --file /tmp/overlay.Dockerfile \
             --tag "${IMAGE_TAG}" \
@@ -146,20 +146,6 @@ jobs:
           echo "✅ Overlay image built: ${IMAGE_TAG}"
           echo "overlay_image=${IMAGE_TAG}" >> $GITHUB_OUTPUT
     
-      - name: Verify overlay image exists locally
-        if: ${{ !env.ACT }}
-        run: |
-          OVERLAY_IMAGE="${{ steps.build_overlay_image.outputs.overlay_image || 'talos-overlay-asus-ascent-gx10:1.0.0' }}"
-          echo "🔍 Verifying overlay image exists: ${OVERLAY_IMAGE}"
-          if ! docker image inspect "${OVERLAY_IMAGE}" >/dev/null 2>&1; then
-            echo "❌ Overlay image not found locally: ${OVERLAY_IMAGE}"
-            echo "Available images:"
-            docker images | grep talos-overlay || echo "No talos-overlay images found"
-            exit 1
-          fi
-          echo "✅ Overlay image found locally"
-          docker image inspect "${OVERLAY_IMAGE}" --format '{{.Id}}'
-      
       - name: Build Talos image with overlay using Docker buildx
         id: build_image
         if: ${{ !env.ACT }}
@@ -167,7 +153,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           PLATFORM: ${{ matrix.platform }}
           TALOS_VERSION: ${{ env.TALOS_VERSION }}
-          OVERLAY_IMAGE: ${{ steps.build_overlay_image.outputs.overlay_image || 'talos-overlay-asus-ascent-gx10:1.0.0' }}
+          OVERLAY_IMAGE: ${{ steps.build_overlay_image.outputs.overlay_image }}
           OVERLAY_NAME: asus-ascent-gx10-overlay
         run: python3 talos/scripts/ci_build_talos_image.py
       
@@ -177,7 +163,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           PLATFORM: ${{ matrix.platform }}
           TALOS_VERSION: ${{ env.TALOS_VERSION }}
-          OVERLAY_IMAGE: talos-overlay-asus-ascent-gx10:1.0.0
+          OVERLAY_IMAGE: docker.io/${{ env.IMAGE_PREFIX }}/talos-overlay-asus-ascent-gx10:1.0.0
           OVERLAY_NAME: asus-ascent-gx10-overlay
         run: python3 talos/scripts/ci_build_talos_image.py
     
@@ -194,27 +180,6 @@ jobs:
         id: overlay_version
         run: |
           echo "version=${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
-    
-      - name: Push overlay image to GHCR
-        if: ${{ !env.ACT && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-        run: |
-          OVERLAY_IMAGE="${{ steps.build_overlay_image.outputs.overlay_image || 'talos-overlay-asus-ascent-gx10:1.0.0' }}"
-          REGISTRY_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:${{ steps.version.outputs.version }}"
-          LATEST_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/talos-overlay-${{ env.OVERLAY_NAME }}:latest"
-          
-          echo "📤 Pushing overlay image to GHCR: ${REGISTRY_TAG}"
-          
-          # Tag for registry
-          docker tag "${OVERLAY_IMAGE}" "${REGISTRY_TAG}"
-          docker tag "${OVERLAY_IMAGE}" "${LATEST_TAG}"
-          
-          # Push to registry
-          docker push "${REGISTRY_TAG}"
-          docker push "${LATEST_TAG}"
-          
-          echo "✅ Overlay image pushed to GHCR"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
       - name: Upload image to GitHub Release (permanent storage)
         if: ${{ !env.ACT && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}

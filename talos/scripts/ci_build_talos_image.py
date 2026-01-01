@@ -171,19 +171,26 @@ def build_image(
     # The imager expects overlay-image (OCI image) and overlay-name
     imager_image = f"ghcr.io/siderolabs/imager:{talos_version}"
     
-    # Verify overlay image exists locally before running imager
-    print(f"🔍 Verifying overlay image exists locally: {overlay_image_ref}")
+    # Pull overlay image from Docker Hub if not already local
+    print(f"📥 Ensuring overlay image is available: {overlay_image_ref}")
     verify_result = subprocess.run(
         ["docker", "image", "inspect", overlay_image_ref],
         capture_output=True,
         text=True,
     )
     if verify_result.returncode != 0:
-        print(f"❌ Overlay image not found locally: {overlay_image_ref}", file=sys.stderr)
-        print("   Available images:", file=sys.stderr)
-        subprocess.run(["docker", "images"], capture_output=False)
-        return 1
-    print(f"✅ Overlay image found locally")
+        print(f"   Image not found locally, pulling from registry...")
+        pull_result = subprocess.run(
+            ["docker", "pull", overlay_image_ref],
+            capture_output=False,
+            text=True,
+        )
+        if pull_result.returncode != 0:
+            print(f"❌ Failed to pull overlay image: {overlay_image_ref}", file=sys.stderr)
+            return 1
+        print(f"✅ Overlay image pulled successfully")
+    else:
+        print(f"✅ Overlay image found locally")
     
     # Build command using Docker buildx (Talos build tools)
     # This uses the imager container with proper buildx integration
