@@ -195,14 +195,14 @@ def build_image(
     # Build command using Docker buildx (Talos build tools)
     # This uses the imager container with proper buildx integration
     # Mount Docker socket so imager can access local overlay image from host
-    # Use --pull=never to prevent imager from trying to pull overlay image
+    # Use "image" command to build a disk image (not "installer" which builds container image)
     cmd = [
         "docker", "run", "--rm", "-t",
         "--platform", f"linux/{arch}",
         "-v", "/var/run/docker.sock:/var/run/docker.sock",
         "-v", f"{output_dir_abs}:/out",
         imager_image,
-        "installer",
+        "image",
         "--arch", arch,
         "--platform", platform,
         "--overlay-image", overlay_image_ref,
