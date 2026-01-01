@@ -128,18 +128,44 @@ def main() -> int:
     """Main entry point."""
     try:
         # Get package path
-        talos_dir = Path(os.getcwd())
-        if (talos_dir / "talos").exists():
-            talos_dir = talos_dir / "talos"
-        elif not (talos_dir / "output").exists():
-            talos_dir = talos_dir.parent / "talos"
+        # Try multiple possible locations
+        current_dir = Path(os.getcwd())
+        possible_output_dirs = [
+            current_dir / "talos" / "output",
+            current_dir / "output",
+            current_dir.parent / "talos" / "output",
+        ]
         
-        output_dir = talos_dir / "output"
+        output_dir = None
+        for possible_dir in possible_output_dirs:
+            if possible_dir.exists():
+                # Check if it has any tar.gz files
+                packages = list(possible_dir.glob("*.tar.gz"))
+                if packages:
+                    output_dir = possible_dir
+                    break
+        
+        if output_dir is None:
+            # Try to find any output directory
+            for possible_dir in possible_output_dirs:
+                if possible_dir.exists():
+                    output_dir = possible_dir
+                    break
+        
+        if output_dir is None:
+            # Create output directory if it doesn't exist (might be from artifact download)
+            output_dir = current_dir / "talos" / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
         
         # Find package
         packages = list(output_dir.glob("*.tar.gz"))
         if not packages:
             print(f"❌ No packages found in {output_dir}", file=sys.stderr)
+            print(f"   Searched in: {output_dir}", file=sys.stderr)
+            if output_dir.exists():
+                print(f"   Directory exists but is empty or contains:", file=sys.stderr)
+                for item in output_dir.iterdir():
+                    print(f"     - {item.name} ({'dir' if item.is_dir() else 'file'})", file=sys.stderr)
             return 1
         
         package_path = packages[0]

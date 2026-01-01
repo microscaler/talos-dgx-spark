@@ -308,6 +308,17 @@ jobs:
             exit 1
           fi
           echo "✅ Found package in talos/output/"
+      
+      - name: List downloaded artifacts
+        if: ${{ !env.ACT }}
+        run: |
+          echo "📦 Checking for downloaded packages..."
+          if [ -d "talos/output" ]; then
+            echo "Contents of talos/output/:"
+            ls -lah talos/output/ || echo "Directory exists but is empty or inaccessible"
+          else
+            echo "⚠️  talos/output/ directory does not exist"
+          fi
     
       - name: Set up Python
         uses: actions/setup-python@v5
