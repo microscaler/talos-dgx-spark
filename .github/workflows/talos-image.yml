@@ -80,6 +80,8 @@ jobs:
     permissions:
       contents: write  # release (workflow_dispatch with release=true)
       packages: write  # push installer to GHCR
+      id-token: write  # sign the attestation
+      attestations: write
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,6 +93,7 @@ jobs:
         run: |
           source talos/config/versions.env
           echo "talos=${TALOS_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/installer-dgx-spark" >> "${GITHUB_OUTPUT}"
           echo "installer=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/installer-dgx-spark:${TALOS_VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Build installer and ISO
@@ -102,11 +105,21 @@ jobs:
           version: v0.22.1
 
       - name: Push installer to GHCR
+        id: push
         env:
           INSTALLER: ${{ steps.versions.outputs.installer }}
         run: |
           crane push talos/output/installer-arm64.tar "${INSTALLER}"
-          echo "Installer: ${INSTALLER}@$(crane digest "${INSTALLER}")" >> "${GITHUB_STEP_SUMMARY}"
+          digest="$(crane digest "${INSTALLER}")"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "Installer: ${INSTALLER}@${digest}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.versions.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
